@@ -1,0 +1,71 @@
+// Champs de formulaire riches : squelette label + aide + erreur.
+// Les styles des balises nues sont dans `base/_forms.scss`.
+@use '../abstracts/mixins' as *;
+
+@layer components {
+  .field {
+    @apply flex flex-col gap-1.5;
+  }
+
+  .field__label {
+    @apply text-sm font-medium text-ink-soft;
+  }
+
+  .field__label--required::after {
+    @apply ml-0.5 text-danger content-['*'];
+  }
+
+  .field__control {
+    @apply w-full rounded-field border border-line bg-surface px-3 py-2
+      text-base text-ink placeholder:text-ink-muted
+      transition-colors duration-150;
+
+    &:focus {
+      @apply border-primary outline-none ring-2 ring-primary/25;
+    }
+
+    &[aria-invalid='true'] {
+      @apply border-danger ring-2 ring-danger/20;
+    }
+  }
+
+  .field__hint {
+    @apply text-xs text-ink-muted;
+  }
+
+  // Sélecteur de couleur d'aidant : un `<select>` natif (utilisable au pouce, accessible)
+  // dont l'apparence est neutralisée, avec pastille et libellé rendus au-dessus. La couleur
+  // n'est jamais seule : le nom de la teinte est écrit à côté.
+  .couleur-select {
+    @apply relative inline-block;
+
+    select {
+      @apply absolute inset-0 size-full cursor-pointer appearance-none opacity-0;
+    }
+  }
+
+  .couleur-select__display {
+    @apply pointer-events-none inline-flex min-h-9 items-center gap-2
+      rounded-field border border-line bg-surface px-2.5 text-sm text-ink-soft;
+  }
+
+  // La pastille est colorée par son CONSOMMATEUR, en style inline
+  // (`--color-assistant-N` choisi à l'exécution). Une déclaration ici serait toujours
+  // écrasée : celle qui visait `--couleur-aidant` pointait une variable que personne ne
+  // pose, et a donc été supprimée.
+  .couleur-select__swatch {
+    @apply size-3.5 shrink-0 rounded-tag border border-line-strong;
+  }
+
+  .field__error {
+    @apply text-xs font-medium text-danger;
+  }
+
+  .field-row {
+    @apply grid grid-cols-1 gap-3;
+
+    @include from('sm') {
+      @apply grid-cols-2;
+    }
+  }
+}

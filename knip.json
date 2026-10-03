@@ -1,0 +1,28 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+
+  // Seulement les points d'entree que knip ne devine pas : les scripts d'outillage
+  // (personne ne les importe) et les tests (seul consommateur de plusieurs fonctions
+  // de domaine). nuxt.config.ts et app/app.vue sont deja detectes automatiquement.
+  // `scripts/**` couvre les suites HTTP, qui vivent dans leur propre dossier.
+  "entry": ["scripts/**/*.mjs", "test/**/*.spec.ts", "cypress/**/*.ts"],
+
+  // Dependances consommees INDIRECTEMENT : knip ne peut pas le voir, mais les retirer
+  // casserait le build ou le typecheck. Chaque ligne est justifiee.
+  "ignoreDependencies": [
+    // Fontsource : charge par CHEMIN dans la cle `css` de nuxt.config.ts, pas par import.
+    "@fontsource/anton",
+    "@fontsource-variable/instrument-sans",
+    "@fontsource-variable/space-grotesk",
+    // Tailwind est consomme par @tailwindcss/postcss, jamais importe directement.
+    "tailwindcss",
+    // vue-tsc est appele par `nuxt typecheck` ; vue-router est exige par Nuxt 4.5 (docs/pieges.md §10).
+    "vue-tsc",
+    "vue-router"
+  ],
+
+  // Un contrat de domaine peut etre declare avant son premier usage. Les elements
+  // destines au schema Drizzle portent `@internal`, ce qui les exempte explicitement
+  // plutot que de les laisser remonter en faux positif pendant des semaines.
+  "tags": ["-internal"]
+}

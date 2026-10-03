@@ -1,0 +1,37 @@
+// Squelettes de chargement : un squelette qui reprend la FORME du contenu évite le saut de
+// mise en page. Le scintillement est désactivé si l'utilisateur a demandé la réduction des
+// animations — le bloc reste alors visible en `surface-muted`.
+@layer components {
+  // Le scintillement est conditionné par la variante `motion-safe:` : un utilisateur qui a
+  // demandé la réduction des animations garde un bloc visible, mais immobile.
+  .skeleton {
+    @apply rounded-tag bg-surface-muted motion-safe:animate-skeleton;
+  }
+
+  .skeleton--text {
+    @apply h-3 w-full;
+  }
+
+  // Bloc au format d'une carte-créneau.
+  .skeleton--block {
+    @apply h-16 w-full rounded-field;
+  }
+
+  .skeleton-row {
+    @apply flex items-center gap-3;
+  }
+
+  // Colonne de largeur fixe, pour imiter la gouttière des heures.
+  .skeleton-row__gutter {
+    @apply w-12 shrink-0;
+  }
+
+  .skeleton-row__body {
+    @apply flex min-w-0 flex-1 flex-col gap-1.5;
+  }
+
+  // Un lecteur d'écran doit annoncer le chargement, pas lire des blocs vides.
+  .skeleton-zone {
+    @apply flex flex-col gap-3;
+  }
+}

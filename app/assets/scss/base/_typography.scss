@@ -1,0 +1,80 @@
+// Typographie : échelle mobile-first. Ces règles ne fixent que les défauts des balises ;
+// dans les templates, les utilitaires Tailwind (`text-sm`, `text-2xl`…) restent la norme.
+@use '../abstracts/mixins' as *;
+
+@layer base {
+  // h1/h2 : Anton, en capitales. Ses minuscules accentuées françaises percutent les
+  // ascendantes, ce que les capitales règlent. Anton n'ayant qu'une graisse (400), la
+  // hiérarchie h1/h2 passe par la taille, et h3/h4 reviennent à Instrument Sans (semibold).
+  h1,
+  h2 {
+    @apply font-display text-balance text-ink uppercase tracking-[0.01em];
+  }
+
+  // Taille plafonnée sur mobile : en capitales, Anton sature vite à 390 px de large.
+  h1 {
+    @apply text-2xl leading-[1.1];
+  }
+
+  h2 {
+    @apply text-xl leading-[1.15];
+  }
+
+  h3,
+  h4 {
+    @apply font-semibold text-balance text-ink;
+  }
+
+  h3 {
+    @apply text-lg leading-snug;
+  }
+
+  h4 {
+    @apply text-base leading-snug;
+  }
+
+  p {
+    @apply text-pretty text-ink-soft leading-relaxed;
+  }
+
+  small {
+    @apply text-sm text-ink-muted;
+  }
+
+  a {
+    @apply text-primary underline-offset-2;
+  }
+
+  a:hover {
+    @apply underline;
+  }
+
+  strong {
+    @apply font-semibold text-ink;
+  }
+
+  // Chiffres tabulaires : les colonnes d'un planning s'alignent verticalement.
+  .num {
+    @include chiffres-tabulaires;
+  }
+
+  // Intertitre : petites capitales espacées, qui étiquettent un groupe sans ajouter un
+  // niveau de titre.
+  .eyebrow {
+    @apply text-xs font-semibold tracking-wide text-ink-muted uppercase;
+  }
+
+  @include from('md') {
+    h1 {
+      @apply text-3xl;
+    }
+
+    h2 {
+      @apply text-2xl;
+    }
+
+    h3 {
+      @apply text-xl;
+    }
+  }
+}

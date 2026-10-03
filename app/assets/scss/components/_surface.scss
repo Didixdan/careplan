@@ -1,0 +1,54 @@
+// Surfaces diverses : sections, état vide, barre d'action, conteneur.
+@use '../abstracts/mixins' as *;
+
+@layer components {
+  .section {
+    @apply flex flex-col gap-3;
+  }
+
+  .section__header {
+    @apply flex items-center justify-between gap-3;
+  }
+
+  // Bordure continue et non pointillée : le pointillé est un tic visuel des interfaces
+  // générées ; un cadre net, avec un texte métier, dit la même chose mieux.
+  .empty-state {
+    @apply flex flex-col items-start gap-2 rounded-card border border-line
+      bg-surface-muted px-5 py-8;
+  }
+
+  .empty-state__title {
+    @apply text-base font-semibold text-ink;
+  }
+
+  .empty-state__text {
+    @apply max-w-prose text-sm text-ink-muted;
+  }
+
+  .empty-state__actions {
+    @apply mt-2 flex flex-col gap-2;
+
+    @include from('sm') {
+      @apply flex-row;
+    }
+  }
+
+  .container-app {
+    @apply mx-auto w-full max-w-5xl px-4;
+  }
+
+  // Grille d'index de référence (utilisée par l'écran de contrôle).
+  .grid-ref {
+    @apply grid grid-cols-1 gap-3;
+
+    @include from('md') {
+      @apply grid-cols-2;
+    }
+  }
+
+  @include from('md') {
+    .container-app {
+      @apply px-6;
+    }
+  }
+}

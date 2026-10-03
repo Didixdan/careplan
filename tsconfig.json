@@ -1,0 +1,10 @@
+{
+  "//": "Racine TypeScript : Nuxt 4 génère les configurations réelles dans .nuxt/. Cette référence est indispensable à `nuxt typecheck`.",
+  "files": [],
+  "references": [
+    { "path": "./.nuxt/tsconfig.app.json" },
+    { "path": "./.nuxt/tsconfig.server.json" },
+    { "path": "./.nuxt/tsconfig.shared.json" },
+    { "path": "./.nuxt/tsconfig.node.json" }
+  ]
+}

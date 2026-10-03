@@ -1,0 +1,2 @@
+# Store pnpm placé hors du projet : il n'a rien à y faire et alourdirait les sauvegardes.
+storeDir: /tmp/careplan-toolcache/pnpm-store

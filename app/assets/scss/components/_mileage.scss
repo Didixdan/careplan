@@ -1,0 +1,33 @@
+// Kilomètres déclarés du jour : une ligne par aidant, sous le bandeau de la vue jour.
+@layer components {
+  .mileage {
+    @apply flex flex-col gap-2;
+  }
+
+  .mileage__titre {
+    @apply text-sm font-medium text-ink;
+  }
+
+  .mileage__ligne {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  // Le nom garde une largeur stable : les champs restent alignés d'une ligne à l'autre, ce qui
+  // évite de relire qui est qui à chaque fois.
+  .mileage__nom {
+    @apply min-w-40 text-sm text-ink-soft;
+  }
+
+  .mileage__champ {
+    @apply flex items-center gap-1.5;
+  }
+
+  // Un champ court : on saisit « 12,5 », pas un paragraphe.
+  .mileage__saisie {
+    @apply w-24 text-right;
+  }
+
+  .mileage__unite {
+    @apply text-sm text-ink-muted;
+  }
+}

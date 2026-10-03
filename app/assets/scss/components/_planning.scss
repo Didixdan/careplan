@@ -1,0 +1,101 @@
+// Grille horaire et créneau posé dans le temps.
+//
+// Ces deux blocs vivaient dans des `<style scoped>` : Tailwind y tourne SANS
+// `@import 'tailwindcss'`, donc `@apply` y échoue même sur un utilitaire du cœur
+// (« Cannot apply unknown utility class `min-w-0` »). Les partials, eux, sont compilés
+// avec le reste de `main.scss` et voient les thèmes et les utilitaires.
+//
+// Le préfixe `horaire` distingue ces classes de `.creneau` (la carte de liste, dans
+// `_creneau.scss`) et de `.semaine__*` (les colonnes, dans `_semaine.scss`).
+@layer components {
+  // Fond de la grille + lignes horaires. Les lignes sont un dégradé RÉPÉTÉ (1 h = 96 px) :
+  // aucun utilitaire Tailwind ne l'exprime, et une valeur arbitraire serait illisible.
+  .grille-horaire {
+    @apply relative min-w-0 rounded-field bg-surface;
+
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent,
+      transparent calc(96px - 1px),
+      var(--color-line) calc(96px - 1px),
+      var(--color-line) 96px
+    );
+  }
+
+  // Heures de l'axe, posées à leur ordonnée.
+  .grille-horaire__heure {
+    @apply absolute left-1 z-0 -translate-y-1/2 text-[0.65rem] text-ink-muted;
+  }
+
+  // Aperçu du dépôt : la forme que prendra le créneau.
+  .grille-horaire__fantome {
+    @apply pointer-events-none absolute right-1 left-11 z-10 rounded-field
+      border-2 border-dashed border-success bg-success/18;
+  }
+
+  .grille-horaire__fantome--conflit {
+    @apply border-danger bg-danger/18;
+  }
+
+  .creneau-horaire {
+    @apply absolute right-1 left-11 flex flex-col gap-[0.1rem] overflow-hidden
+      rounded-field border border-line border-l-[3px] bg-surface px-2 py-[0.3rem]
+      cursor-grab touch-none select-none;
+
+    // `border-l-[3px]` pose l'épaisseur ; la couleur vient d'une variable choisie à
+    // l'exécution (`--color-assistant-N`), donc d'un `var()` que `@apply` n'accepte pas
+    // comme couleur de côté.
+    border-left-color: var(--creneau-couleur);
+  }
+
+  .creneau-horaire--glisse {
+    @apply pointer-events-none opacity-40;
+  }
+
+  .creneau-horaire--passe {
+    @apply opacity-55;
+  }
+
+  // « À valider » est le seul état qui demande une action : fond teinté, comme la carte de
+  // liste. Sur un créneau court, le badge est coupé par la hauteur — la teinte dit alors
+  // l'état sans la couleur seule, puisque les actions offertes le redisent.
+  .creneau-horaire--a-valider {
+    @apply bg-warning-100/60;
+  }
+
+  .dark .creneau-horaire--a-valider {
+    @apply bg-warning-900/25;
+  }
+
+  // Le contenu cède la largeur de la rangée d'actions : le titre s'ellipse au lieu de passer
+  // sous les boutons. 6rem = 2 × 44 px + les marges.
+  .creneau-horaire--actions .creneau-horaire__contenu {
+    @apply pr-24;
+  }
+
+  .creneau-horaire__contenu {
+    @apply flex min-w-0 flex-col gap-[0.1rem];
+  }
+
+  .creneau-horaire__titre {
+    @apply truncate text-[0.75rem] leading-[1.2] font-semibold text-ink;
+  }
+
+  .creneau-horaire__heures {
+    @apply text-[0.7rem] text-ink-soft;
+  }
+
+  // Ligne des noms : en `flex`, pour aligner verticalement l'icône de rôle sur le texte.
+  // Un conteneur flex n'ellipse PAS ses enfants : le `truncate` doit donc vivre sur les
+  // groupes icône + nom, dans le template, et pas ici.
+  .creneau-horaire__aidant {
+    @apply flex items-center text-[0.7rem] text-ink-muted;
+  }
+
+  // Rangée d'actions rapides : ÉPINGLÉE en haut à droite, donc hors du flux — elle ne peut
+  // pas être poussée hors de la carte par le contenu. La carte reste en `overflow-hidden`,
+  // et c'est le seuil (`hasRoomForStatusActions`) qui garantit qu'elle y tient.
+  .creneau-horaire__actions {
+    @apply absolute top-0.5 right-0.5 z-10 flex items-center gap-0.5;
+  }
+}

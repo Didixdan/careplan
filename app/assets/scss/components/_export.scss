@@ -1,0 +1,20 @@
+// Exports : le texte prêt à coller dans un message, et son repli.
+@layer components {
+  .export {
+    @apply rounded-card border border-line;
+  }
+
+  .export__resume {
+    @apply cursor-pointer px-3 py-2 text-sm font-medium text-ink;
+  }
+
+  .export__contenu {
+    @apply flex flex-col items-start gap-2 border-t border-line px-3 py-3;
+  }
+
+  // Le texte est montré tel qu'il sera envoyé : retours à la ligne conservés, et pas de
+  // débordement horizontal sur un téléphone.
+  .export__texte {
+    @apply font-sans text-sm whitespace-pre-wrap text-ink-soft;
+  }
+}

@@ -1,0 +1,170 @@
+// Point d'entrée CSS unique : polices, Tailwind, charte et design system.
+// `@use` doit précéder toute règle (exigence Sass) : les partials sont donc chargés en
+// `@import`. Tailwind est branché par PostCSS, jamais par `@tailwindcss/vite`
+// (docs/pieges.md §1).
+
+@use 'abstracts/tokens';
+@use 'abstracts/mixins';
+
+// Les polices sont déclarées dans nuxt.config.ts, PAS ici : Sass ne sait pas inliner une
+// feuille `.css` de paquet npm (docs/pieges.md §5).
+
+@import 'tailwindcss';
+
+// Sources scannées par Tailwind, résolues depuis la racine du projet.
+@source './app/**/*.{vue,js,ts}';
+
+// Charte Tailwind 4 : les couleurs sont nommées par usage (primary, surface, ink…), pas
+// par teinte — changer la charte, c'est changer ces valeurs. Palette volontairement
+// DÉSATURÉE ; toute retouche exige `pnpm verify:css`, qui contrôle les contrastes.
+@theme {
+  // Typographie
+  // Instrument Sans : corps, libellés, h3/h4 (variable 400 → 700).
+  --font-sans: 'Instrument Sans Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  // Anton : h1/h2 UNIQUEMENT, graisse unique (400) — la hiérarchie passe par la taille,
+  // et les capitales sont imposées par ses minuscules accentuées françaises.
+  --font-display: 'Anton', 'Instrument Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  // Space Grotesk : chiffres, heures, durées, totaux (chiffres tabulaires).
+  --font-num: 'Space Grotesk Variable', ui-monospace, 'SFMono-Regular', monospace;
+
+  // Primaire : bleu médical désaturé (teinte 245), 5,92:1 sur blanc.
+  --color-primary-50: oklch(97.4% 0.009 245);
+  --color-primary-100: oklch(94.4% 0.019 245);
+  --color-primary-200: oklch(89.4% 0.034 245);
+  --color-primary-300: oklch(82.4% 0.049 245);
+  --color-primary-400: oklch(72.4% 0.064 245);
+  --color-primary-500: oklch(62.4% 0.072 245);
+  --color-primary-600: oklch(50% 0.075 245);
+  --color-primary-700: oklch(43% 0.068 245);
+  --color-primary-800: oklch(36% 0.057 245);
+  --color-primary-900: oklch(29% 0.046 245);
+  --color-primary-950: oklch(22% 0.036 245);
+
+  // Accent : bleu-cyan froid, même famille de teinte que le primaire — marquer, pas décorer.
+  --color-accent-50: oklch(97.6% 0.012 215);
+  --color-accent-100: oklch(94.8% 0.026 215);
+  --color-accent-200: oklch(90% 0.045 215);
+  --color-accent-300: oklch(83.5% 0.062 215);
+  --color-accent-400: oklch(74% 0.078 215);
+  --color-accent-500: oklch(64% 0.085 215);
+  --color-accent-600: oklch(52% 0.082 215);
+  --color-accent-700: oklch(44% 0.072 215);
+  --color-accent-800: oklch(37% 0.06 215);
+  --color-accent-900: oklch(30% 0.048 215);
+  --color-accent-950: oklch(23% 0.036 215);
+
+  // États : rampes complètes, car les badges posent une encre …-700 sur un fond …-100.
+  --color-success-100: oklch(94.8% 0.032 152);
+  --color-success-300: oklch(84% 0.085 152);
+  --color-success-500: oklch(52% 0.11 152);
+  --color-success-700: oklch(40% 0.088 152);
+  --color-success-900: oklch(29% 0.06 152);
+
+  --color-warning-100: oklch(95.2% 0.038 75);
+  --color-warning-300: oklch(86% 0.092 75);
+  --color-warning-500: oklch(56% 0.12 75);
+  --color-warning-700: oklch(44% 0.095 75);
+  --color-warning-900: oklch(32% 0.065 75);
+
+  --color-danger-100: oklch(94.8% 0.028 27);
+  --color-danger-300: oklch(84% 0.078 27);
+  --color-danger-500: oklch(50% 0.17 27);
+  --color-danger-700: oklch(41% 0.14 27);
+  --color-danger-900: oklch(30% 0.1 27);
+
+  // Alias sémantiques
+  --color-primary: var(--color-primary-600);
+  --color-primary-hover: var(--color-primary-700);
+  --color-accent: var(--color-accent-600);
+  --color-accent-hover: var(--color-accent-700);
+  --color-success: var(--color-success-500);
+  --color-warning: var(--color-warning-500);
+  --color-danger: var(--color-danger-700);
+
+  // Surfaces et encre : NEUTRES FROIDS (teinte 250). Un fond neutre ne teinte pas les
+  // données et laisse la couleur utile ressortir.
+  --color-canvas: oklch(98.5% 0.004 250);
+  --color-surface: oklch(100% 0 0);
+  --color-surface-muted: oklch(96.5% 0.006 250);
+  --color-line: oklch(91% 0.009 250);
+  --color-line-strong: oklch(84% 0.013 250);
+  --color-ink: oklch(24% 0.012 250);
+  --color-ink-soft: oklch(38% 0.01 250);
+  --color-ink-muted: oklch(52% 0.01 250);
+
+  // Rayons : le rayon signale la TAILLE (tag < field < card) ; `pill` = puces de filtre.
+  --radius-tag: 0.125rem;
+  --radius-field: 0.375rem;
+  --radius-card: 0.625rem;
+
+  // Ombres : UNIQUEMENT ce qui flotte. Une carte posée est plate, avec une bordure franche.
+  --shadow-float: 0 2px 8px -2px oklch(26% 0.012 70 / 0.12),
+    0 1px 3px -1px oklch(26% 0.012 70 / 0.08);
+  --shadow-overlay: 0 12px 32px -8px oklch(26% 0.012 70 / 0.22),
+    0 4px 8px -4px oklch(26% 0.012 70 / 0.1);
+
+  --animate-skeleton: skeleton-pulse 1.6s ease-in-out infinite;
+
+  @keyframes skeleton-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
+    }
+  }
+}
+
+// Couleurs d'aidant — bloc `@theme static` SÉPARÉ, indispensable : Tailwind n'émet que les
+// variables qu'il croit utilisées d'après le scan, et celles-ci sont posées en style inline
+// construit à l'exécution. Sans `static`, elles disparaissent du bundle sans erreur
+// (docs/pieges.md §8). `verify:css` échoue si l'une des huit manque.
+@theme static {
+  --color-assistant-1: oklch(48% 0.1 22);
+  --color-assistant-2: oklch(45% 0.09 58);
+  --color-assistant-3: oklch(44% 0.08 130);
+  --color-assistant-4: oklch(46% 0.09 190);
+  --color-assistant-5: oklch(44% 0.1 240);
+  --color-assistant-6: oklch(47% 0.11 285);
+  --color-assistant-7: oklch(45% 0.1 320);
+  --color-assistant-8: oklch(49% 0.09 350);
+}
+
+// Thème piloté par une classe sur <html>, et non par le système.
+@custom-variant dark (&:where(.dark, .dark *));
+
+// Thème sombre : ce n'est PAS un inversé. Seuls les fonds de badge sont redéfinis (voir
+// components/_badge.scss) ; les surfaces sombres dérivent de la teinte 250.
+@layer base {
+  .dark {
+    --color-canvas: oklch(19% 0.008 250);
+    --color-surface: oklch(23.5% 0.01 250);
+    --color-surface-muted: oklch(27.5% 0.012 250);
+    --color-line: oklch(32% 0.014 250);
+    --color-line-strong: oklch(39% 0.017 250);
+    --color-ink: oklch(95.5% 0.004 250);
+    --color-ink-soft: oklch(87% 0.006 250);
+    --color-ink-muted: oklch(71% 0.009 250);
+  }
+}
+
+@import 'base/root';
+@import 'base/typography';
+@import 'base/forms';
+
+@import 'components/button';
+@import 'components/card';
+@import 'components/badge';
+@import 'components/field';
+@import 'components/surface';
+@import 'components/modale';
+@import 'components/skeleton';
+@import 'components/creneau';
+@import 'components/export';
+@import 'components/mileage';
+@import 'components/planning';
+@import 'components/recap';
+@import 'components/semaine';
+
+@import 'layouts/app-shell';

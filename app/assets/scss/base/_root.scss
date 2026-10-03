@@ -1,0 +1,43 @@
+@use '../abstracts/mixins' as *;
+
+@layer base {
+  html {
+    // Empêche l'inflation automatique du texte en paysage sur iOS. Ce n'est PAS le
+    // réglage anti-zoom au focus d'un champ : celui-là est la taille de police de
+    // 16 px minimum, définie dans `base/_forms.scss`.
+    // Aucun utilitaire Tailwind ne couvre cette propriété préfixée.
+    -webkit-text-size-adjust: 100%;
+
+    @apply motion-safe:scroll-smooth;
+  }
+
+  body {
+    // Barres d'URL dynamiques sur mobile + encoches (iPhone).
+    @apply bg-canvas text-ink antialiased min-h-dvh
+      ps-[env(safe-area-inset-left)] pe-[env(safe-area-inset-right)];
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-primary;
+  }
+
+  // Le focus clavier n'est jamais supprimé.
+  :focus:not(:focus-visible) {
+    @apply outline-none;
+  }
+
+  nav ul,
+  nav ol {
+    @apply list-none p-0;
+  }
+
+  @include from('lg') {
+    * {
+      // Tailwind n'a AUCUN utilitaire de barre de défilement : les propriétés
+      // `scrollbar-*` ne font pas partie du cœur, et un plugin serait une dépendance
+      // de plus pour deux déclarations.
+      scrollbar-width: thin;
+      scrollbar-color: var(--color-line-strong) transparent;
+    }
+  }
+}

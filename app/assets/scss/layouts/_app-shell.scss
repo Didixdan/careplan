@@ -1,0 +1,111 @@
+// Coquille applicative : barre de navigation basse (zone atteignable au pouce sur un
+// téléphone), qui devient une colonne latérale et disparaît à partir de `lg`.
+@use '../abstracts/mixins' as *;
+
+@layer components {
+  .app-shell {
+    @apply flex min-h-[100dvh] flex-col bg-canvas;
+  }
+
+  // Fond opaque, sans flou : le flou derrière l'en-tête nuit à la lecture des heures qui
+  // défilent dessous.
+  .app-header {
+    @apply sticky top-0 z-20 flex items-center justify-between gap-3
+      border-b border-line bg-surface px-4 min-h-13 pt-[env(safe-area-inset-top)];
+  }
+
+  // Le logotype en Anton : l'un des rares emplois justifiés de la fonte d'affichage.
+  .app-header__title {
+    @apply font-display truncate text-lg text-ink uppercase tracking-[0.02em];
+  }
+
+  .app-header__aside {
+    @apply flex shrink-0 items-center gap-2;
+  }
+
+  .app-main {
+    @apply flex-1 pb-4;
+  }
+
+  // Réserve la hauteur de la barre basse pour ne rien masquer derrière.
+  .app-shell--with-bottom-nav .app-main {
+    @apply pb-[calc(4.5rem+env(safe-area-inset-bottom))];
+  }
+
+  .app-bottom-nav {
+    @apply fixed inset-x-0 bottom-0 z-30 grid border-t border-line bg-surface
+      grid-flow-col auto-cols-fr pb-[env(safe-area-inset-bottom)];
+  }
+
+  .app-bottom-nav__item {
+    @apply relative flex min-h-14 flex-col items-center justify-center gap-0.5
+      text-xs font-medium text-ink-muted no-underline;
+
+    // Avec cinq entrées (l'admin : Jour, Semaine, Mois, Aidants, Bénéficiaires), une colonne
+    // ne fait plus que ~75 px sur un téléphone : un libellé long doit pouvoir se couper, sinon
+    // il bave sur ses voisins. `hyphens-auto` coupe au bon endroit, la langue du document
+    // étant déjà `fr`.
+    > span {
+      @apply hyphens-auto text-balance leading-tight;
+    }
+
+    &:hover {
+      @apply no-underline;
+    }
+
+    // État actif porté par `aria-current`, doublé d'un trait en haut : la couleur ne doit pas
+    // être le seul porteur de l'information.
+    &[aria-current='page'] {
+      @apply text-primary;
+    }
+
+    &[aria-current='page']::before {
+      @apply absolute inset-x-4 top-0 h-0.5 rounded-tag bg-primary content-[''];
+    }
+  }
+
+  .app-bottom-nav__icon {
+    @apply size-5;
+  }
+
+  .app-sidebar {
+    @apply hidden w-60 shrink-0 flex-col gap-0.5 border-r border-line
+      bg-surface px-3 py-4;
+  }
+
+  .app-sidebar__brand {
+    @apply font-display px-3 pb-4 text-xl text-ink uppercase tracking-[0.02em];
+  }
+
+  .app-sidebar__item {
+    @apply flex min-h-10 items-center gap-3 rounded-field px-3 text-sm
+      font-medium text-ink-soft no-underline;
+
+    &:hover {
+      @apply bg-surface-muted text-ink no-underline;
+    }
+
+    &[aria-current='page'] {
+      @apply bg-primary-50 text-primary-800;
+    }
+  }
+
+  @include from('lg') {
+    .app-shell {
+      @apply flex-row;
+    }
+
+    // Réaffiche la colonne latérale, masquée en mobile-first.
+    .app-sidebar {
+      @apply flex;
+    }
+
+    .app-bottom-nav {
+      @apply hidden;
+    }
+
+    .app-shell--with-bottom-nav .app-main {
+      @apply pb-4;
+    }
+  }
+}

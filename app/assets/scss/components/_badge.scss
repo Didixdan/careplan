@@ -1,0 +1,105 @@
+// Badges — statuts courts : « Planifié », « Réalisé », « Annulé »…
+//
+// Fonds OPAQUES définis par mode, jamais d'opacité (`bg-success/15`) : une opacité se
+// compose avec ce qu'il y a dessous et le contraste devient un accident du mode.
+// Chaque couple (encre, fond) est contrôlé à 4,5:1 par `pnpm verify:css`.
+@layer components {
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-tag border px-2 py-0.5
+      text-xs font-medium whitespace-nowrap;
+  }
+
+  // Lisible dans les deux modes sans redéfinition, et discrète.
+  .badge--neutral {
+    @apply border-line-strong bg-surface text-ink-soft;
+  }
+
+  .badge--primary {
+    @apply border-primary-200 bg-primary-50 text-primary-800;
+  }
+
+  .badge--accent {
+    @apply border-accent-200 bg-accent-50 text-accent-800;
+  }
+
+  .badge--success {
+    @apply border-success-300 bg-success-100 text-success-700;
+  }
+
+  .badge--warning {
+    @apply border-warning-300 bg-warning-100 text-warning-900;
+  }
+
+  .badge--danger {
+    @apply border-danger-300 bg-danger-100 text-danger-700;
+  }
+
+  // Encre très claire sur remplissage moyen-foncé, recette IDENTIQUE dans les deux thèmes :
+  // c'est le seul couple qui tienne 4,5:1 des deux côtés.
+  .badge--solid {
+    @apply border-transparent;
+  }
+
+  .badge--solid.badge--primary {
+    @apply bg-primary-700 text-primary-100;
+  }
+
+  .badge--solid.badge--success {
+    @apply bg-success-700 text-success-100;
+  }
+
+  .badge--solid.badge--danger {
+    @apply bg-danger-700 text-danger-100;
+  }
+
+  // Pastille ronde seule (couleur d'aidant).
+  .badge__dot {
+    @apply size-2 shrink-0 rounded-full bg-current;
+  }
+
+  .badge-group {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+
+  // Thème sombre : fonds clairs teintés → fonds sombres teintés, encres éclaircies. On ne
+  // peut PAS se contenter d'inverser : les 4,5:1 doivent tenir dans les deux sens.
+  .dark {
+    .badge--neutral {
+      @apply border-line-strong bg-surface-muted text-ink-soft;
+    }
+
+    .badge--primary {
+      @apply border-primary-800 bg-primary-950 text-primary-200;
+    }
+
+    .badge--accent {
+      @apply border-accent-800 bg-accent-950 text-accent-200;
+    }
+
+    .badge--success {
+      @apply border-success-900 bg-success-900 text-success-100;
+    }
+
+    .badge--warning {
+      @apply border-warning-900 bg-warning-900 text-warning-100;
+    }
+
+    .badge--danger {
+      @apply border-danger-900 bg-danger-900 text-danger-100;
+    }
+
+    // Ne PAS inverser ici (encre foncée sur …-500) : même à L=10 % le contraste plafonne
+    // sous 4,5:1. Les badges pleins gardent donc la recette du thème clair.
+    .badge--solid.badge--primary {
+      @apply bg-primary-700 text-primary-100;
+    }
+
+    .badge--solid.badge--success {
+      @apply bg-success-700 text-success-100;
+    }
+
+    .badge--solid.badge--danger {
+      @apply bg-danger-700 text-danger-100;
+    }
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "name": "careplan",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Planning et suivi des heures pour auxiliaires de vie (CESU)",
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@10.18.0",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "typecheck": "nuxt typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "lint:code-mort": "knip",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:reset": "docker compose down -v && docker compose up -d",
+    "db:logs": "docker compose logs -f db",
+    "db:psql": "docker compose exec db psql -U careplan -d careplan",
+    "db:wait": "sh scripts/db-wait.sh",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:seed": "tsx server/db/seed.ts",
+    "verify:css": "node scripts/verify-css.mjs",
+    "verify": "pnpm typecheck && pnpm typecheck:e2e && pnpm test && pnpm lint && pnpm lint:code-mort && pnpm build && pnpm verify:css",
+    "report:comments": "node scripts/comment-report.mjs",
+    "e2e": "cypress run",
+    "e2e:open": "cypress open",
+    "e2e:db": "sh scripts/e2e.sh db",
+    "e2e:serve": "sh scripts/e2e.sh serve",
+    "e2e:all": "sh scripts/e2e.sh all",
+    "typecheck:e2e": "tsc -p cypress --noEmit"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "cypress",
+      "esbuild",
+      "unrs-resolver"
+    ]
+  },
+  "dependencies": {
+    "@fontsource-variable/instrument-sans": "^5.3.0",
+    "@fontsource-variable/space-grotesk": "^5.3.0",
+    "@fontsource/anton": "^5.3.0",
+    "drizzle-orm": "^0.45.3",
+    "nuxt": "^4.5.2",
+    "nuxt-auth-utils": "^0.5.30",
+    "postgres": "^3.4.9",
+    "vue": "^3.5.0",
+    "vue-router": "^5.2.0"
+  },
+  "devDependencies": {
+    "@nuxt/eslint": "^1.17.0",
+    "@tailwindcss/postcss": "^4.3.3",
+    "cypress": "^16.1.1",
+    "drizzle-kit": "^0.31.11",
+    "eslint": "^10.0.0",
+    "knip": "^6.39.0",
+    "sass-embedded": "^1.105.1",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.3",
+    "vue-tsc": "^3.3.11"
+  }
+}

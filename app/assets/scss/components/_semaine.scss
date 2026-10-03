@@ -1,0 +1,117 @@
+// Vue semaine : grille de 7 colonnes. Sur mobile, la grille défile en horizontal (un jour
+// par écran) et la page en vertical ; à partir de `md`, les colonnes restent larges (3 à 4
+// jours visibles) et la grille défile toujours en horizontal, la page défilant verticalement
+// (aucun défilement interne dans les colonnes).
+@use '../abstracts/mixins' as *;
+
+@layer components {
+  .semaine {
+    @apply flex flex-col gap-3;
+  }
+
+  .semaine__barre {
+    @apply flex items-center justify-between gap-2;
+  }
+
+  .semaine__titre {
+    @apply font-display truncate text-base text-ink uppercase tracking-[0.01em];
+  }
+
+  .semaine__actions {
+    @apply flex shrink-0 items-center gap-1;
+  }
+
+  // Sur mobile ce bloc n'a aucune hauteur bornée : la page défile verticalement, et l'axe
+  // horizontal reste à la grille.
+  .semaine__bloc {
+    @apply min-w-0;
+  }
+
+  .semaine__grille {
+    // MOBILE : le défilement horizontal vit ici, et nulle part ailleurs. Aucun défilement
+    // vertical dans les colonnes : une zone qui capterait le geste sans rien à faire défiler
+    // empêcherait d'atteindre les jours suivants (verrouillé par `verify:css`).
+    //
+    // `-mx-4 px-4` sort de la gouttière du conteneur : sans cela, la première et la dernière
+    // colonne restent coincées sous le padding et la fin du défilement est inaccessible.
+    @apply grid gap-2 grid-flow-col auto-cols-[min(78vw,15rem)]
+      overflow-x-auto overflow-y-hidden snap-x snap-mandatory overscroll-x-contain
+      -mx-4 px-4 scroll-px-4;
+
+    // Préfixe obsolète (iOS < 13), sans utilitaire Tailwind.
+    -webkit-overflow-scrolling: touch;
+  }
+
+  @include from('md') {
+    // À partir de `md`, les colonnes s'élargissent pour rester lisibles : 3 à 4 jours
+    // visibles, le reste atteint par défilement horizontal (hérité du mobile). Aucune
+    // hauteur bornée ni défilement interne : la page défile verticalement.
+    .semaine__grille {
+      @apply auto-cols-[18rem];
+    }
+  }
+
+  .semaine__colonne {
+    @apply flex flex-col overflow-hidden rounded-card border border-line bg-surface snap-start;
+  }
+
+  // Aujourd'hui : bordure renforcée, pas de fond coloré — la couleur est réservée au statut.
+  .semaine__colonne--aujourdhui {
+    @apply border-primary-300;
+    // Ligne d'accent posée en `box-shadow inset`, et NON via `shadow-*` : les utilitaires
+    // d'ombre de Tailwind sont de l'ÉLÉVATION (ils traînent `--tw-ring-*`, `--tw-shadow`),
+    // et la charte réserve l'ombre à ce qui flotte. Ici, c'est un trait décoratif.
+    box-shadow: inset 0 2px 0 0 var(--color-primary);
+  }
+
+  .semaine__entete {
+    @apply flex shrink-0 items-baseline justify-between gap-1 border-b border-line px-2.5 py-2;
+  }
+
+  .semaine__jour {
+    @apply font-display text-sm text-ink uppercase tracking-[0.02em];
+  }
+
+  .semaine__numero {
+    @include chiffres-tabulaires;
+    @apply text-sm font-medium text-ink-soft;
+  }
+
+  .semaine__colonne--aujourdhui .semaine__numero {
+    @apply text-primary;
+  }
+
+  .semaine__total-valeur {
+    @include chiffres-tabulaires;
+    @apply text-xs font-medium text-ink-soft;
+  }
+
+  .jour-vue {
+    @apply flex flex-col gap-3;
+  }
+
+  .jour-vue__barre {
+    @apply flex items-center justify-between gap-2;
+  }
+
+  .jour-vue__titre {
+    @apply font-display truncate text-lg text-ink uppercase tracking-[0.01em];
+  }
+
+  .synthese {
+    @apply grid grid-cols-3 gap-2;
+  }
+
+  .synthese__case {
+    @apply flex flex-col gap-0.5 rounded-card border border-line bg-surface px-3 py-2;
+  }
+
+  .synthese__valeur {
+    @include chiffres-tabulaires;
+    @apply text-lg font-medium text-ink;
+  }
+
+  .synthese__libelle {
+    @apply text-xs text-ink-muted;
+  }
+}

@@ -1,0 +1,122 @@
+// Boutons — mobile-first. `.btn` donne un bouton neutre, `.btn--*` l'enrichissent.
+// Zone de frappe : 2.75rem (44 px) partout, y compris en `sm` et en `lg` (3rem).
+@use '../abstracts/mixins' as *;
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-field border border-transparent
+      px-4 text-sm font-semibold whitespace-nowrap
+      transition-colors duration-150 select-none min-h-11;
+
+    &:disabled,
+    &[aria-disabled='true'] {
+      @apply pointer-events-none opacity-50;
+    }
+
+    > svg {
+      @apply size-4 shrink-0;
+    }
+  }
+
+  // Aucune ombre : un bouton est posé, pas flottant. Seule l'action principale se distingue.
+  .btn--primary {
+    @apply bg-primary text-white;
+
+    &:hover,
+    &:active {
+      @apply bg-primary-hover;
+    }
+  }
+
+  .btn--secondary {
+    @apply border-line-strong bg-surface text-ink;
+
+    &:hover,
+    &:active {
+      @apply bg-surface-muted;
+    }
+  }
+
+  .btn--ghost {
+    @apply bg-transparent text-ink-soft;
+
+    &:hover,
+    &:active {
+      @apply bg-surface-muted text-ink;
+    }
+  }
+
+  .btn--danger {
+    @apply bg-danger text-white;
+
+    &:hover,
+    &:active {
+      @apply brightness-[0.94];
+    }
+  }
+
+  // Encre sombre sur accent : 6,29:1. `text-white` sur l'accent ne donnerait que 4,3:1.
+  .btn--accent {
+    @apply bg-accent-300 text-accent-950;
+
+    &:hover,
+    &:active {
+      @apply bg-accent-400;
+    }
+  }
+
+  // Tailles — `sm` réduit le padding et la police, JAMAIS la hauteur de frappe.
+  // 44 px partout, y compris en `sm` : sur un téléphone tenu d'une main, une cible
+  // plus courte se rate. Voir la règle de zone tactile dans docs/decisions.md §10.
+  .btn--sm {
+    @apply px-3 text-xs min-h-11;
+  }
+
+  .btn--lg {
+    @apply px-5 text-base min-h-12;
+  }
+
+  // Modificateurs
+  .btn--block {
+    @apply w-full;
+  }
+
+  .btn--icon {
+    @apply px-0 aspect-square min-w-11;
+  }
+
+  .btn--loading {
+    @apply pointer-events-none opacity-70;
+  }
+
+  // Trois points plutôt qu'un rond qui tourne. L'animation est conditionnée à
+  // `prefers-reduced-motion` par la variante `motion-safe:` — sans elle les points
+  // restent visibles, mais immobiles.
+  .btn__loading {
+    @apply inline-flex shrink-0 items-center gap-0.5;
+
+    > span {
+      @apply size-1 rounded-full bg-current motion-safe:animate-skeleton;
+    }
+
+    // `animation-delay` n'a pas d'utilitaire Tailwind : `delay-*` pilote une TRANSITION.
+    // Ces deux règles sont sans effet tant qu'aucune animation n'est posée.
+    > span:nth-child(2) {
+      animation-delay: 200ms;
+    }
+
+    > span:nth-child(3) {
+      animation-delay: 400ms;
+    }
+  }
+
+  @include from('md') {
+    .btn {
+      @apply px-5;
+    }
+
+    .btn--sm {
+      @apply px-3;
+    }
+  }
+}

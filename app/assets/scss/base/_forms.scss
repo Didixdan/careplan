@@ -1,0 +1,58 @@
+// Éléments de formulaire natifs : un `<input>` sans classe doit déjà être
+// utilisable sur mobile. Les variantes riches sont dans `components/_field.scss`.
+@use '../abstracts/mixins' as *;
+
+@layer base {
+  input,
+  select,
+  textarea,
+  button {
+    // Sans cela, les navigateurs retombent sur une fonte système pour les contrôles de
+    // formulaire : l'application perd sa typographie là où l'utilisateur saisit ses heures.
+    @apply font-sans;
+  }
+
+  input,
+  select,
+  textarea {
+    // `text-base` vaut 1rem = 16px : en dessous, iOS zoome automatiquement au focus.
+    // La taille est donc portée par l'utilitaire, pas par une déclaration parallèle.
+    @apply block w-full rounded-field border border-line bg-surface px-3 py-2 text-base text-ink;
+    @include tap-target;
+
+    &::placeholder {
+      @apply text-ink-muted;
+    }
+
+    &:disabled {
+      @apply cursor-not-allowed bg-surface-muted text-ink-muted opacity-70;
+    }
+
+    &[aria-invalid='true'] {
+      @apply border-danger;
+    }
+  }
+
+  input[type='date'],
+  input[type='time'],
+  input[type='datetime-local'] {
+    @apply py-2 min-h-11;
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    @apply size-5 shrink-0 rounded border-line text-primary min-h-0 p-0;
+  }
+
+  label {
+    @apply block text-sm font-medium text-ink-soft;
+  }
+
+  fieldset {
+    @apply border-0 p-0;
+  }
+
+  legend {
+    @apply px-0 text-sm font-semibold text-ink;
+  }
+}

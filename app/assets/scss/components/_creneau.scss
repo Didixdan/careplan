@@ -1,0 +1,117 @@
+// Styles de la cellule de créneau : heures en colonne de largeur fixe, durée en barre
+// proportionnelle, couleur d'aidant en rail pleine hauteur.
+@use '../abstracts/mixins' as *;
+
+@layer components {
+  .creneau {
+    @apply flex items-stretch gap-3 px-3 py-2.5;
+  }
+
+  // Largeur FIXE : les heures doivent s'aligner d'une carte à l'autre dans la journée.
+  // Ne pas la laisser s'ajuster au contenu.
+  .creneau__temps {
+    @apply flex w-14 shrink-0 flex-col items-start pt-0.5;
+  }
+
+  .creneau__heure {
+    @include chiffres-tabulaires;
+    @apply text-sm leading-tight font-medium text-ink;
+  }
+
+  .creneau__separateur {
+    @include chiffres-tabulaires;
+    @apply text-xs leading-none text-ink-muted;
+  }
+
+  .creneau__contenu {
+    @apply flex min-w-0 flex-1 flex-col gap-1;
+  }
+
+  .creneau__entete {
+    @apply flex items-start justify-between gap-2;
+  }
+
+  .creneau__titre {
+    @apply truncate text-sm font-medium text-ink;
+  }
+
+  // Ligne des noms : en `flex`, pour aligner verticalement l'icône de rôle sur le texte.
+  // Un conteneur flex n'ellipse PAS ses enfants : le `truncate` vit donc sur les groupes
+  // icône + nom, pas ici.
+  .creneau__meta {
+    @apply flex items-center text-xs text-ink-muted;
+  }
+
+  .creneau__duree {
+    @include chiffres-tabulaires;
+    @apply shrink-0 text-xs font-medium text-ink-soft;
+  }
+
+  // Actions rapides de la carte de liste : dans le FLUX, après la barre de durée. La carte
+  // s'allonge de leur hauteur, donc aucune place à réserver ni seuil à calculer.
+  .creneau__actions {
+    @apply flex items-center gap-1 pt-0.5;
+  }
+
+  .duree {
+    @apply flex items-center gap-2;
+  }
+
+  .duree__piste {
+    @apply h-1 min-w-0 flex-1 overflow-hidden rounded-tag bg-surface-muted;
+  }
+
+  .duree__remplissage {
+    @apply h-full rounded-tag;
+    // La couleur vient de l'aidant, posée par la carte sur `--creneau-couleur` ; le repli
+    // garde la barre visible si la variable manque. Pas d'utilitaire Tailwind pour un
+    // `var()` AVEC repli.
+    background-color: var(--creneau-couleur, var(--color-primary));
+  }
+
+  // La barre est décorative : la durée est TOUJOURS écrite à côté, sinon la longueur
+  // deviendrait le seul porteur de l'information. Le texte de durée est `.creneau__duree`.
+  // (`.duree__valeur` a été supprimée : déclarée mais jamais utilisée.)
+
+  // --- Variante compacte : listes denses, vue par aidant --------------------
+  .creneau--compact {
+    @apply gap-2 px-2.5 py-2;
+  }
+
+  .creneau--compact .creneau__temps {
+    @apply w-12;
+  }
+
+  .creneau--compact .creneau__duree {
+    @apply hidden;
+  }
+
+  // Créneau passé ou annulé : atténué sans devenir illisible, l'information reste consultable.
+  .creneau--passe {
+    @apply opacity-70;
+  }
+
+  // « À valider » : le seul état qui demande une action, donc le seul à recevoir un fond
+  // teinté — les autres statuts se contentent de leur badge.
+  .creneau--a-valider {
+    @apply bg-warning-100/60;
+  }
+
+  .dark .creneau--a-valider {
+    @apply bg-warning-900/25;
+  }
+
+  @include from('md') {
+    .creneau {
+      @apply gap-4 px-4 py-3;
+    }
+
+    .creneau__temps {
+      @apply w-16;
+    }
+
+    .creneau__heure {
+      @apply text-base;
+    }
+  }
+}

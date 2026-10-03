@@ -1,0 +1,58 @@
+// Récapitulatif mensuel : les heures à déclarer, par aidant et par bénéficiaire.
+//
+// Les chiffres viennent du serveur (`app/utils/summary.ts`, via `/api/appointments/summary`)
+// : cet écran met en forme, il ne recompte pas. Deux totaux calculés à deux endroits
+// finiraient par diverger, et personne ne saurait lequel croire.
+@use '../abstracts/mixins' as *;
+
+@layer components {
+  .recap {
+    @apply flex flex-col gap-4;
+  }
+
+  .recap__barre {
+    @apply flex items-center justify-between gap-2;
+  }
+
+  .recap__titre {
+    @apply font-display truncate text-lg text-ink uppercase tracking-[0.01em];
+  }
+
+  // Une ligne de récapitulatif : le nom d'un côté, le chiffre qui compte de l'autre.
+  .recap__ligne {
+    @apply flex flex-col gap-2;
+  }
+
+  .recap__nom {
+    @apply truncate text-sm font-medium text-ink;
+  }
+
+  .recap__chiffres {
+    @include chiffres-tabulaires;
+    @apply shrink-0 text-sm font-medium text-ink-soft;
+  }
+
+  .recap__contexte {
+    @apply text-xs text-ink-muted;
+  }
+
+  // Barre de consommation d'un volume autorisé : la même échelle que la barre de durée d'un
+  // créneau, mais sa propre classe — la couleur vient du SENS (dépassement), pas d'un aidant.
+  .recap__piste {
+    @apply h-1 min-w-0 flex-1 overflow-hidden rounded-tag bg-surface-muted;
+  }
+
+  .recap__remplissage {
+    @apply h-full rounded-tag bg-primary;
+  }
+
+  .recap__remplissage--depassement {
+    @apply bg-danger;
+  }
+
+  // Le dépassement est une alerte : il s'écrit en rouge, et la barre le double — la couleur
+  // n'est jamais le seul porteur de l'information.
+  .recap__depassement {
+    @apply text-xs font-medium text-danger;
+  }
+}

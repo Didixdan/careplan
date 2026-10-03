@@ -1,0 +1,61 @@
+// Fenêtre modale : fond assombri, panneau posé en bas sur téléphone (là où le pouce
+// arrive) et centré à partir de `sm`. Elle porte le formulaire de créneau — créer et
+// modifier sans quitter le planning, donc sans perdre la grille de vue.
+@use '../abstracts/mixins' as *;
+
+@layer components {
+  .modale {
+    // Le voile est NOIR, et non `bg-ink/40` : en thème sombre `--color-ink` devient clair,
+    // et un voile qui s'éclaircit n'assombrit plus rien.
+    @apply fixed inset-0 z-40 flex items-end justify-center overflow-y-auto
+      bg-black/45 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)];
+
+    @include from('sm') {
+      @apply items-center p-4;
+    }
+  }
+
+  // Le panneau FLOTTE : c'est le seul endroit où `shadow-overlay` est légitime — la charte
+  // réserve l'ombre à ce qui flotte, et une carte posée reste plate.
+  .modale__panneau {
+    @apply flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-y-auto
+      rounded-t-card border border-line bg-surface shadow-overlay;
+
+    @include from('sm') {
+      @apply max-w-lg rounded-card;
+    }
+  }
+
+  .modale__entete {
+    @apply flex items-start justify-between gap-3 border-b border-line px-4 py-3;
+  }
+
+  .modale__titre {
+    @apply text-base font-semibold text-ink;
+  }
+
+  // Croix de fermeture : 44 px de côté, la cible minimale (docs/decisions.md §10), et le
+  // `-mr-1` la réaligne sur la gouttière du panneau.
+  .modale__fermer {
+    @apply -mr-1 inline-flex size-11 shrink-0 items-center justify-center
+      rounded-field text-ink-muted;
+
+    &:hover {
+      @apply bg-surface-muted text-ink;
+    }
+
+    > svg {
+      @apply size-4;
+    }
+  }
+
+  // Corps et pied sont fournis par le CONTENU (voir PlanningAppointmentForm) : la modale
+  // n'impose que le cadre, pas la disposition du formulaire.
+  .modale__corps {
+    @apply flex flex-col gap-4 px-4 py-4;
+  }
+
+  .modale__pied {
+    @apply flex flex-wrap items-center gap-2 border-t border-line px-4 py-3;
+  }
+}

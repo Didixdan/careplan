@@ -1,0 +1,47 @@
+# CarePlan — développement local : ne lance QUE la base de données, l'application tourne
+# sur la machine hôte (`pnpm dev`), ce qui préserve le rechargement à chaud.
+# POSTGRES_PASSWORD est lue dans `.env` ; aucun mot de passe par défaut n'est committé.
+
+services:
+  db:
+    # Aligné sur la version provisionnée par Neon (aucun écart local/production).
+    image: postgres:17-alpine
+
+    container_name: careplan-db
+
+    # Redémarre après un reboot, sauf arrêt explicite (`docker compose stop`).
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-careplan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD absent - copier .env.example en .env}
+      POSTGRES_DB: ${POSTGRES_DB:-careplan}
+      # Collation déterministe : les tris de noms doivent être identiques en
+      # local et en production.
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
+
+    ports:
+      # Exposé sur l'hôte uniquement ; adapter le port de gauche si un Postgres
+      # tourne déjà en local.
+      - '${POSTGRES_PORT:-5432}:5432'
+
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+    healthcheck:
+      # `pg_isready` répond avant que la base n'accepte les connexions : on joue
+      # donc une vraie requête, via le socket Unix (aucun mot de passe sur la
+      # ligne de commande, donc rien dans les journaux ni `docker inspect`).
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -h /var/run/postgresql && psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -h /var/run/postgresql -tAc "SELECT 1" >/dev/null',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+volumes:
+  pgdata:
+    name: careplan-pgdata

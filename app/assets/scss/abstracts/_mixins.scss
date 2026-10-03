@@ -1,0 +1,44 @@
+@use 'sass:map';
+@use 'tokens' as *;
+
+$breakpoints: (
+  'xs': $bp-xs,
+  'sm': $bp-sm,
+  'md': $bp-md,
+  'lg': $bp-lg,
+  'xl': $bp-xl,
+  '2xl': $bp-2xl,
+);
+
+/// Media query mobile-first : `@include from('md') { ... }`
+///
+/// Seule chose que Tailwind ne sait pas exprimer ici : les points de rupture du projet
+/// sont des jetons Sass (`_tokens.scss`), pas l'échelle par défaut de Tailwind.
+@mixin from($name) {
+  @if not map.has-key($breakpoints, $name) {
+    @error 'Breakpoint inconnu : #{$name}. Valeurs possibles : #{map.keys($breakpoints)}.';
+  }
+  @media (min-width: map.get($breakpoints, $name)) {
+    @content;
+  }
+}
+
+/// Zone tactile minimale (WCAG 2.2 « target size »).
+@mixin tap-target($size: 2.75rem) {
+  @apply min-h-[#{$size}] min-w-[#{$size}];
+}
+
+/// Chiffres tabulaires : les colonnes d'un planning s'alignent verticalement.
+///
+/// Les partials ne peuvent PAS faire `@apply num` : `.num` est une classe du design
+/// system, pas un utilitaire Tailwind. Un mixin est la seule forme réutilisable.
+@mixin chiffres-tabulaires {
+  @apply font-num tabular-nums;
+}
+
+// Trois mixins ont été supprimés : Tailwind les remplace, et aucun n'était consommé.
+//
+//   `touch`       → variante `pointer-coarse:`
+//   `line-clamp`  → utilitaires `line-clamp-N`
+//   `motion-safe` → variante `motion-safe:`, qui garde la garde `prefers-reduced-motion`
+//                   VISIBLE là où l'animation est écrite, au lieu de la cacher dans un mixin.

@@ -1,0 +1,18 @@
+// Tokens Sass restants.
+//
+// Ce fichier ne contient QUE ce que le CSS ne peut pas exprimer : les points de
+// rupture, utilisés par le mixin `from()` de `_mixins.scss`.
+//
+// Les couleurs, rayons et ombres vivent dans le bloc `@theme` de `main.scss`, et
+// les durées de transition utilisent les utilitaires Tailwind (`duration-150`).
+// Auparavant, ce fichier déclarait aussi des z-index, des durées d'animation et un
+// rayon `pill` : aucun n'était consommé, ils ont été supprimés. Un jeton déclaré
+// mais inutilisé donne l'illusion d'une échelle à respecter.
+
+// Breakpoints — mobile-first : on ne redéfinit QUE les montées.
+$bp-xs: 24rem; // 384px  — très petits téléphones
+$bp-sm: 40rem; // 640px  — téléphone paysage
+$bp-md: 48rem; // 768px  — tablette portrait
+$bp-lg: 64rem; // 1024px — tablette paysage / petit laptop
+$bp-xl: 80rem; // 1280px — desktop
+$bp-2xl: 96rem; // 1536px — grand écran
