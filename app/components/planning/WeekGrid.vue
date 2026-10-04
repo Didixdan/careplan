@@ -43,6 +43,17 @@ function dayTotal(date: string): number {
     .filter(c => c.status !== 'cancelled')
     .reduce((total, c) => total + (durationInMinutes(c.start, c.end) ?? 0), 0)
 }
+
+/**
+ * Ce jour a-t-il quelque chose à montrer ?
+ *
+ * C'est la condition de rendu du cadre défilant : une zone bornée SANS contenu capterait le
+ * geste du doigt sans rien faire défiler, et empêcherait d'atteindre le jour suivant
+ * (`docs/pieges.md` §13). Un jour vide reçoit donc une ligne, pas un cadre.
+ */
+function hasAppointments(date: string): boolean {
+  return (byDate.value.get(date) ?? []).length > 0
+}
 </script>
 
 <template>
@@ -64,45 +75,65 @@ function dayTotal(date: string): number {
         <span class="semaine__total-valeur ml-auto">{{ formatDuration(dayTotal(date)) }}</span>
       </div>
 
-      <PlanningTimeGrid
-        :date="date"
-        :appointments="dayAppointments(date)"
-        :ghost="ghost"
-        :has-conflict="hasConflict"
-        :dragged-appointment-id="draggedAppointmentId"
-        :start-drag="startDrag"
-        :select="select"
-        :change-status="changeStatus"
-        :is-status-pending="isStatusPending"
-      />
-
+      <!-- Un jour n'a de cadre défilant QUE s'il a quelque chose à faire défiler : une zone
+           bornée sans contenu capterait le geste du doigt pour rien (docs/pieges.md §13).
+           Le cadre est focalisable, sinon son contenu serait inatteignable au clavier au-delà
+           de la première hauteur d'écran. -->
       <div
-        v-if="nightAppointments(date).length > 0"
-        class="divide-y divide-line"
+        v-if="hasAppointments(date)"
+        class="semaine__corps"
+        role="group"
+        tabindex="0"
+        :aria-label="`Créneaux du ${longDay(date)} ${dayOfMonth(date)}`"
       >
-        <!-- Créneaux de nuit : hors grille, donc non déplaçables, mais bien sélectionnables.
-             Les attributs de focus passent au composant (attributs hérités, une seule racine). -->
-        <PlanningAppointment
-          v-for="appointment in nightAppointments(date)"
-          :key="appointment.id"
-          compact
-          :start="appointment.start"
-          :end="appointment.end"
-          :title="appointment.title"
-          :beneficiary="appointment.beneficiary"
-          :primary-assistant="appointment.primaryAssistant"
-          :color="appointment.color"
-          :co-assistants="appointment.coAssistants"
-          :status="appointment.status"
-          :status-pending="isStatusPending(appointment.id)"
-          :tabindex="canEdit ? 0 : undefined"
-          :role="canEdit ? 'button' : undefined"
-          @click="select(appointment)"
-          @keydown.enter.prevent="select(appointment)"
-          @keydown.space.prevent="select(appointment)"
-          @status-change="changeStatus(appointment, $event)"
+        <PlanningTimeGrid
+          :date="date"
+          :appointments="dayAppointments(date)"
+          :ghost="ghost"
+          :has-conflict="hasConflict"
+          :dragged-appointment-id="draggedAppointmentId"
+          :start-drag="startDrag"
+          :select="select"
+          :change-status="changeStatus"
+          :is-status-pending="isStatusPending"
         />
+
+        <!-- Créneaux de nuit : sous l'axe, à l'intérieur du cadre (l'axe 22:00 est déjà en
+             bas). Hors grille, donc non déplaçables, mais bien sélectionnables. Les attributs
+             de focus passent au composant (attributs hérités, une seule racine). -->
+        <div
+          v-if="nightAppointments(date).length > 0"
+          class="divide-y divide-line"
+        >
+          <PlanningAppointment
+            v-for="appointment in nightAppointments(date)"
+            :key="appointment.id"
+            compact
+            :start="appointment.start"
+            :end="appointment.end"
+            :beneficiary="appointment.beneficiary"
+            :tags="appointment.tags"
+            :primary-assistant="appointment.primaryAssistant"
+            :color="appointment.color"
+            :co-assistants="appointment.coAssistants"
+            :status="appointment.status"
+            :status-pending="isStatusPending(appointment.id)"
+            :tabindex="canEdit ? 0 : undefined"
+            :role="canEdit ? 'button' : undefined"
+            @click="select(appointment)"
+            @keydown.enter.prevent="select(appointment)"
+            @keydown.space.prevent="select(appointment)"
+            @status-change="changeStatus(appointment, $event)"
+          />
+        </div>
       </div>
+
+      <p
+        v-else
+        class="semaine__vide"
+      >
+        Aucun passage
+      </p>
     </div>
   </div>
 </template>

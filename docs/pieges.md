@@ -131,41 +131,51 @@ appels. Même contrainte pour `app/composables/`. Mesuré, pas supposé.
 
 ## 13. Modèle de défilement de la vue semaine
 
-**Contrainte tenue : on ne peut jamais défiler en horizontal ET en vertical en même
-temps.** C'est le défaut classique des calendriers web, et il rend la lecture pénible
-au doigt.
+**La vue semaine ne défile pas en horizontal.** Les sept jours sont empilés en grille — une
+colonne sur téléphone, deux à partir de `md`, trois à partir de `lg`, donc 3/3/1 en desktop —
+et **chaque jour défile pour lui-même** dans un cadre borné à quatre heures
+(`.semaine__corps`, `max-height: 24rem` = 4 × 96 px). L'en-tête du jour (nom, numéro, total)
+reste visible pendant que son cadre défile. La page, elle, ne défile qu'en vertical.
 
-**Sur téléphone**, la grille défile **en horizontal seulement**, la **page** en
-vertical :
+**Contrainte tenue : on ne peut jamais défiler en horizontal ET en vertical en même temps.**
+Le défilement horizontal a simplement disparu : le modèle précédent (sept colonnes côte à
+côte, une journée visible sur téléphone et trois à quatre sur un écran de bureau, les autres
+atteintes en glissant de côté) a été remplacé parce qu'il était pénible à lire.
 
-- la grille porte `overflow-x: auto` + `scroll-snap-type: x mandatory`, colonnes à
-  `min(78vw, 15rem)` : l'axe horizontal avance d'un **jour entier** ;
-- elle **n'a aucune hauteur bornée**, et les colonnes **ne défilent pas** ;
-- `margin-inline: -1rem` fait sortir la zone de défilement de la gouttière du
-  conteneur, sinon la première et la dernière colonne restent coincées sous le padding.
+### Une zone bornée doit avoir quelque chose à faire défiler
 
-**À partir de `md`**, les sept colonnes tiennent côte à côte : chaque colonne peut
-alors défiler pour elle-même (`overflow-y: auto` + `min-height: 0`).
+C'est le piège qui a coûté le plus cher, et il reste actif. À 390 px de large, la première
+version donnait à chaque colonne un `max-height` pour qu'elle défile : or le contenu d'une
+colonne tenait entièrement dans la zone. Elle **existait sans rien à faire défiler**, captait
+le geste vertical, et le doigt ne pouvait plus atteindre les jours suivants.
 
-**Défaut corrigé** : la version initiale avait un `max-height` mobile pour que chaque
-colonne défile. Or à 390 px de large, le contenu d'une colonne tient entièrement dans
-la zone : elle **existait sans rien à faire défiler**, captait le geste vertical, et
-le doigt ne pouvait plus atteindre les jours suivants.
+**`overscroll-behavior` ne redirige pas un geste, il l'arrête.** La seule correction fiable
+est de **supprimer** le défilement inutile, pas de le chaîner.
 
-**`overscroll-behavior` ne redirige pas un geste, il l'arrête.** La seule correction
-fiable est de **supprimer** le défilement inutile, pas de le chaîner. `verify:css`
-échoue si un `max-height` ou un `overflow-y: auto` réapparaît sur `.semaine__grille`
-hors media query.
+D'où deux règles tenues par le code :
+
+- **un jour sans passage ne rend aucun cadre défilant** : il affiche une ligne
+  « Aucun passage » (`WeekGrid.vue`, `hasAppointments`) ;
+- **un jour qui a des passages a toujours de quoi défiler** : la grille fait 1 440 px dans un
+  cadre de 384 px.
+
+Et `overscroll-behavior` reste à `auto` sur le cadre : en fin de journée, le geste doit
+pouvoir continuer vers le jour suivant.
 
 Pièges liés :
 
-- `min-height: 0` est **indispensable** sur les parents flex en mode desktop : sans
-  lui, un enfant refuse de rétrécir et le défilement interne ne se déclenche jamais.
+- `min-height: 0` est **indispensable** sur le cadre : dans une colonne flex, sans lui
+  l'enfant refuse de rétrécir et la borne est ignorée.
 - Le raccourci `overflow` de Tailwind s'écrit `overflow: auto hidden` — **sens x puis
   y**. Un contrôle qui ne chercherait que `overflow-x` conclurait à tort que le
   défilement a disparu.
 - Le tri des créneaux est fait **dans le composant** : l'ordre d'arrivée dépendra de
   la requête SQL, qui ne garantit rien sans `ORDER BY`.
+
+`verify:css` échoue si un `overflow-x: auto` ou une accroche `snap-x` réapparaît sur
+`.semaine__grille`, si elle porte un `max-height`, ou si `.semaine__corps` perd sa borne
+(24 rem), son `min-height: 0` ou son `overflow-y: auto` — ou passe son `overscroll-behavior`
+à `contain`.
 
 ## 14. Un tap sur une surface de glisser-déposer exige un seuil
 

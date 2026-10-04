@@ -85,6 +85,12 @@
     @apply text-[0.7rem] text-ink-soft;
   }
 
+  // Rangée de tags : des pastilles SANS bordure et plus petites que les badges, pour qu'un tag
+  // ne se confonde jamais avec un statut — la charte réserve le badge au statut.
+  .creneau-horaire__tags {
+    @apply flex flex-wrap items-center gap-0.5;
+  }
+
   // Ligne des noms : en `flex`, pour aligner verticalement l'icône de rôle sur le texte.
   // Un conteneur flex n'ellipse PAS ses enfants : le `truncate` doit donc vivre sur les
   // groupes icône + nom, dans le template, et pas ici.

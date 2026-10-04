@@ -11,7 +11,7 @@ describe('Connexion', () => {
 
   it('refuse un mot de passe faux, sans dire lequel est faux', () => {
     cy.visit('/login')
-    cy.get('#email').type(ACCOUNTS.admin)
+    cy.get('#email').type(ACCOUNTS.admin.email)
     cy.get('#password').type('mauvais-mot-de-passe')
     cy.contains('button', 'Se connecter').click()
 

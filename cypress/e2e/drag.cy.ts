@@ -18,15 +18,19 @@ describe('Déplacement d’un créneau', () => {
     id: string
     start: string
     end: string
-    title: string
   }
 
-  /** Le créneau portant ce titre, tel que le serveur le connaît. */
-  function fromServer(title: string): Cypress.Chainable<AppointmentRow> {
+  /**
+   * Le créneau tel que le serveur le connaît, repéré par son IDENTIFIANT.
+   *
+   * On ne le cherche plus par intitulé : les cartes portent désormais le nom du bénéficiaire
+   * (commun à plusieurs passages) et des tags (partagés). L'identifiant, lui, est unique.
+   */
+  function fromServer(id: string): Cypress.Chainable<AppointmentRow> {
     return cy.request(`/api/appointments?date=${today()}`).its('body').then((list) => {
-      const found = (list as AppointmentRow[]).find(appointment => appointment.title === title)
+      const found = (list as AppointmentRow[]).find(appointment => appointment.id === id)
 
-      expect(found, `créneau « ${title} » présent côté serveur`).to.not.equal(undefined)
+      expect(found, `créneau ${id} présent côté serveur`).to.not.equal(undefined)
       return cy.wrap(found as AppointmentRow)
     })
   }
@@ -37,13 +41,16 @@ describe('Déplacement d’un créneau', () => {
     return raw > 0 ? raw : raw + 1440
   }
 
-  /** Glisse une carte de `deltaY` pixels (négatif = vers le haut), comme le ferait un doigt. */
-  function dragCard(title: string, deltaY: number) {
+  /**
+   * Glisse une carte de `deltaY` pixels (négatif = vers le haut), comme le ferait un doigt.
+   * La carte est repérée par un TAG propre au scénario.
+   */
+  function dragCard(tag: string, deltaY: number) {
     // La carte doit être à l'écran AVANT de mesurer : les coordonnées du geste sont absolues,
     // et une carte sous la ligne de flottaison enverrait le pointeur hors de la fenêtre.
-    revealCard(title)
+    revealCard(tag)
 
-    cy.contains('.creneau-horaire', title).then(($card) => {
+    cy.contains('.creneau-horaire', tag).then(($card) => {
       const box = $card[0]!.getBoundingClientRect()
       const clientX = box.left + box.width / 2
       const clientY = box.top + 10
@@ -55,12 +62,12 @@ describe('Déplacement d’un créneau', () => {
     })
   }
 
-  function planToday(title: string) {
+  function planToday(tag: string) {
     return cy.referenceLists().then(({ beneficiaries, assistants }) => {
       return cy
         .createFreeAppointment({
           date: today(),
-          title,
+          tags: [tag],
           status: 'planned',
           beneficiaryId: beneficiaries[0].id,
           primaryAssistantId: assistants[0].id,
@@ -81,16 +88,15 @@ describe('Déplacement d’un créneau', () => {
   })
 
   it('déplace un créneau, par pas de 15 minutes et sans changer sa durée', () => {
-    planToday('Vérif déplacement')
-    cy.visit('/')
-    cards().should('have.length.at.least', 1)
+    planToday('Vérif déplacement').then((before) => {
+      cy.visit('/')
+      cards().should('have.length.at.least', 1)
 
-    fromServer('Vérif déplacement').then((before) => {
       // 48 px = 30 minutes à 1,6 px la minute.
       dragCard('Vérif déplacement', 48)
       cy.wait('@moveAppointment')
 
-      fromServer('Vérif déplacement').then((after) => {
+      fromServer(before.id).then((after) => {
         expect(after.start).not.to.equal(before.start)
         expect(after.start > before.start).to.equal(true)
         // Le pas de 15 minutes, et une durée intacte.
@@ -116,7 +122,7 @@ describe('Déplacement d’un créneau', () => {
       cy.wait(250)
       cy.get('@moveAppointment.all').should('have.length', 0)
 
-      fromServer('Vérif chevauchement A').then((after) => {
+      fromServer(a.id).then((after) => {
         expect(after.start).to.equal(a.start)
         expect(after.end).to.equal(a.end)
       })

@@ -56,15 +56,17 @@ const isAdmin = computed(() => user.value?.role === 'admin')
 // rien (`app/composables/planning.ts`).
 const canEdit = useCanEditAppointments()
 
-const { data: options } = useLoading<AppointmentFormOptions>(
+const { data: options, refresh: refreshOptions } = useLoading<AppointmentFormOptions>(
   'appointment-options',
   () => canEdit.value
     ? api<AppointmentFormOptions>('/api/appointments/options')
-    : Promise.resolve({ beneficiaries: [], assistants: [] }),
+    : Promise.resolve({ beneficiaries: [], assistants: [], tags: [] }),
   [canEdit],
 )
 const beneficiaries = computed(() => options.value?.beneficiaries ?? [])
 const assistants = computed(() => options.value?.assistants ?? [])
+/** Catalogue des tags du formulaire : chargé avec les autres listes de référence. */
+const catalogue = computed(() => options.value?.tags ?? [])
 const selectedAssistant = ref('')
 const isCreating = ref(false)
 
@@ -76,6 +78,9 @@ const isCreating = ref(false)
 function onSaved(date: string) {
   isCreating.value = false
   selectedAppointment.value = null
+  // Un tag inconnu vient peut-être d'être créé : le catalogue est relu pour qu'il soit proposé
+  // à la prochaine saisie, sans recharger la page.
+  refreshOptions()
   if (referenceDate.value === date) refresh()
   else referenceDate.value = date
 }
@@ -380,6 +385,7 @@ function currentWeek() {
         :default-date="referenceDate"
         :beneficiaries="beneficiaries"
         :assistants="assistants"
+        :catalogue="catalogue"
         @saved="onSaved"
         @cancel="closeModal"
       />
@@ -394,6 +400,7 @@ function currentWeek() {
         :appointment="selectedAppointment"
         :beneficiaries="beneficiaries"
         :assistants="assistants"
+        :catalogue="catalogue"
         @saved="onSaved"
         @deleted="onDeleted"
         @cancel="closeModal"

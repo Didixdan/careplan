@@ -144,24 +144,26 @@ app/
   components/
     ui/                      UiButton, UiBadge, UiCard, UiCopyButton, UiModal, UiSkeleton,
                              UiEmptyState, UiErrorPage, UiPersonIcon
-    planning/                PlanningAppointment, PlanningAppointmentForm, PlanningStatusActions,
-                             PlanningTimeGrid, PlanningTimedAppointment, PlanningWeekGrid
+    planning/                PlanningAppointment, PlanningAppointmentForm, PlanningTagPicker,
+                             PlanningStatusActions, PlanningTimeGrid, PlanningTimedAppointment,
+                             PlanningWeekGrid
     layout/                  LayoutShell (nav basse mobile, colonne en desktop)
   composables/               theme.ts, planning.ts, loading.ts, drag.ts, status.ts, mileage.ts
   pages/                     index (jour), week, month (récapitulatif), assistants,
-                             beneficiaries, login, styleguide, [...missing]
-  utils/                     date, duration, colors, grid, conflicts, gesture, status,
+                             beneficiaries, tags (vocabulaire), login, styleguide, [...missing]
+  utils/                     date, duration, colors, grid, conflicts, gesture, status, tags,
                              summary, appointments, money, csv, export, message, mileage,
                              error — PLAT (auto-import)
   assets/scss/               design system (abstracts, base, components, layouts)
 shared/types/                contrat du domaine + types de session (auth.d.ts)
-server/db/schema.ts          schéma Drizzle (7 tables, base en anglais)
+server/db/schema.ts          schéma Drizzle (9 tables, base en anglais)
 server/db/fixtures.ts        données de référence (seed + tests)
 server/db/seed.ts            peuplement de la base locale
 server/services/             logique applicative (un service par entité)
 server/api/appointments/     lecture jour / semaine / mois filtrée par rôle, listes de
                              référence, récapitulatif, création, déplacement, édition,
                              statut, suppression
+server/api/tags/             catalogue des tags : lecture (aidants + admin), écriture (admin)
 server/api/mileage/          kilomètres déclarés : lecture du jour, écriture (ou effacement)
 server/api/exports/          exports CSV : récapitulatif CESU du mois, semaine par aidant
 server/api/auth/             connexion / déconnexion
@@ -182,12 +184,13 @@ docker-compose.yml           Postgres 17 pour le développement local
 | Route | Vue |
 | --- | --- |
 | `/` | **Jour** — grille horaire (07h–22h) : créneaux créés, modifiés, déplacés (glisser-déposer), marqués réalisés/annulés en un clic et supprimés depuis l'écran, **kilomètres du jour déclarés par aidant** |
-| `/week` | **Semaine** — grille horaire de 7 colonnes, défilement horizontal, déplacement entre jours, mêmes actions rapides de statut, **exports de la semaine** (CSV par aidant, message par famille) |
-| `/month` | **Mois** — récapitulatif : heures à déclarer par aidant, volume autorisé par bénéficiaire, détail des journées, **export CESU en CSV** |
+| `/week` | **Semaine** — sept blocs de jour empilés (1, 2 puis 3 par ligne), chacun borné à quatre heures et défilant pour lui-même ; déplacement entre jours, mêmes actions rapides de statut, **exports de la semaine** (CSV par aidant, message par famille) |
+| `/month` | **Mois** — récapitulatif : heures à déclarer par aidant, **solde prévisionnel** (heures restant à planifier et montant prévisionnel, au taux de chaque bénéficiaire), volume autorisé par bénéficiaire, détail des journées, **export CESU en CSV** |
 | `/styleguide` | Écran de contrôle du design system (couleurs, polices, contrastes) |
 | `/login` | Page de connexion (identifiants + mot de passe) |
 | `/assistants` | Gestion des aidants (admin) — liste, création, modification, suppression |
 | `/beneficiaries` | Gestion des bénéficiaires (admin) — liste, création, modification, suppression |
+| `/tags` | Gestion du **vocabulaire des actes** (admin) — renommer un tag (il se propage partout) ou le supprimer s'il n'est porté par aucun créneau |
 | autre | **404** — page rendue par la route attrape-tout, code HTTP 404 conservé |
 
 ## État du projet

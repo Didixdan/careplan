@@ -1,0 +1,70 @@
+// Sélecteur de tags : pastilles retenues, champ de recherche, suggestions dans le flux.
+//
+// La liste n'est PAS un menu flottant : le corps de la modale défile
+// (`.modale__corps { overflow-y: auto }`), et un menu en position absolue y serait rogné — le
+// classique « je tape, la liste est coupée ». Ici elle pousse les champs suivants, ce qui tient
+// aussi sur 360 px.
+@use '../abstracts/mixins' as *;
+
+@layer components {
+  .tags-field {
+    @apply flex flex-col gap-1.5;
+  }
+
+  .tags-field__choisis {
+    @apply flex flex-wrap gap-1.5;
+  }
+
+  // La pastille est un BOUTON de retrait : 44 px de haut comme toute cible tactile
+  // (docs/decisions.md §10). Une croix de 16 px se raterait au pouce.
+  .tags-field__puce {
+    @apply inline-flex min-h-11 items-center gap-1.5 rounded-tag border border-line
+      bg-surface-muted px-2.5 text-sm text-ink transition-colors duration-150;
+
+    &:hover {
+      @apply border-line-strong;
+    }
+  }
+
+  .tags-field__liste {
+    @apply flex max-h-56 flex-col overflow-y-auto rounded-field border border-line bg-surface;
+  }
+
+  .tags-field__option {
+    @apply min-h-11 cursor-pointer px-3 py-2 text-sm text-ink-soft;
+
+    // Surlignage au clavier ET au survol : les deux passent par le fond, jamais par la couleur
+    // seule — c'est une position dans une liste, pas une donnée.
+    &:hover {
+      @apply bg-surface-muted;
+    }
+  }
+
+  .tags-field__option--actif {
+    @apply bg-surface-muted text-ink;
+  }
+
+  // La ligne « Créer « … » » est une ACTION, pas un choix dans une liste : elle est séparée
+  // d'un trait et porte la couleur primaire, comme les autres actions de l'application.
+  .tags-field__option--creation {
+    @apply border-t border-line font-medium text-primary;
+  }
+
+  .tags-field__option--creation.tags-field__option--actif {
+    @apply bg-surface-muted text-primary;
+  }
+
+  // Pastille de tag, telle qu'elle apparaît sur une carte. Une seule déclaration pour les deux
+  // cartes (grille horaire et liste) : c'était deux copies à quelques dixièmes de rem près,
+  // donc deux endroits à corriger le jour où la forme change.
+  .tag-chip {
+    @apply max-w-full truncate rounded-tag bg-surface-muted px-1.5
+      text-[0.7rem] leading-[1.3] text-ink-soft;
+  }
+
+  // Le « +N » n'est pas un tag : il les COMPTE. Chiffres tabulaires pour qu'il ne danse pas
+  // quand le nombre change.
+  .tag-chip--plus {
+    @apply font-num tabular-nums text-ink-muted;
+  }
+}

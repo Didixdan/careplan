@@ -83,17 +83,17 @@ describe('cesuCsv', () => {
 describe('weekCsv', () => {
   const dates = week('2026-09-30')
   const lines = [
-    { date: '2026-09-28', start: '09:00', end: '11:00', assistantNames: ['Camille Roussel'], beneficiaryName: 'Élise Dupont', title: 'Aide à la toilette', status: 'completed' as const },
-    { date: '2026-09-28', start: '11:00', end: '11:30', assistantNames: ['Camille Roussel'], beneficiaryName: 'Élise Dupont', title: 'Passage court', status: 'to_validate' as const },
-    { date: '2026-09-30', start: '08:00', end: '10:00', assistantNames: ['Sofia Lambert'], beneficiaryName: 'Lucie Petit', title: 'Courses', status: 'planned' as const },
-    { date: '2026-10-01', start: '22:00', end: '01:00', assistantNames: ['Nadia Benali'], beneficiaryName: 'Lucie Petit', title: 'Veille', status: 'planned' as const },
-    { date: '2026-10-02', start: '14:00', end: '15:00', assistantNames: ['Camille Roussel'], beneficiaryName: 'Élise Dupont', title: 'Annulé', status: 'cancelled' as const },
+    { date: '2026-09-28', start: '09:00', end: '11:00', assistantNames: ['Camille Roussel'], beneficiaryName: 'Élise Dupont', tags: ['Aide à la toilette'], status: 'completed' as const },
+    { date: '2026-09-28', start: '11:00', end: '11:30', assistantNames: ['Camille Roussel'], beneficiaryName: 'Élise Dupont', tags: ['Passage court', 'Traitement'], status: 'to_validate' as const },
+    { date: '2026-09-30', start: '08:00', end: '10:00', assistantNames: ['Sofia Lambert'], beneficiaryName: 'Lucie Petit', tags: ['Courses'], status: 'planned' as const },
+    { date: '2026-10-01', start: '22:00', end: '01:00', assistantNames: ['Nadia Benali'], beneficiaryName: 'Lucie Petit', tags: ['Veille'], status: 'planned' as const },
+    { date: '2026-10-02', start: '14:00', end: '15:00', assistantNames: ['Camille Roussel'], beneficiaryName: 'Élise Dupont', tags: ['Annulé'], status: 'cancelled' as const },
   ]
 
   const expected = [
-    'Semaine;Aidant(s);Date;Jour;Début;Fin;Durée (h:min);Heures (décimal);Bénéficiaire;Intitulé;Statut',
+    'Semaine;Aidant(s);Date;Jour;Début;Fin;Durée (h:min);Heures (décimal);Bénéficiaire;Tags;Statut',
     '28 septembre – 4 octobre 2026;Camille Roussel;2026-09-28;lundi;09:00;11:00;2 h 00;2,00;Élise Dupont;Aide à la toilette;Réalisé',
-    '28 septembre – 4 octobre 2026;Camille Roussel;2026-09-28;lundi;11:00;11:30;30 min;0,50;Élise Dupont;Passage court;À vérifier',
+    '28 septembre – 4 octobre 2026;Camille Roussel;2026-09-28;lundi;11:00;11:30;30 min;0,50;Élise Dupont;Passage court, Traitement;À vérifier',
     '28 septembre – 4 octobre 2026;Sofia Lambert;2026-09-30;mercredi;08:00;10:00;2 h 00;2,00;Lucie Petit;Courses;Planifié',
     '28 septembre – 4 octobre 2026;Nadia Benali;2026-10-01;jeudi;22:00;01:00;3 h 00;3,00;Lucie Petit;Veille;Planifié',
     '28 septembre – 4 octobre 2026;Camille Roussel;2026-10-02;vendredi;14:00;15:00;;;Élise Dupont;Annulé;Annulé',
@@ -133,8 +133,17 @@ describe('weekCsv', () => {
     expect(totals.every(row => row.includes('2 h 00;2,00'))).toBe(true)
   })
 
-  it('échappe un intitulé qui contient un point-virgule', () => {
-    const csv = weekCsv(dates, [{ ...lines[0]!, title: 'Courses ; retour' }])
+  it('porte TOUS les tags d’un créneau, pas les trois de la carte', () => {
+    // La carte n'en montre que trois : l'export ne doit pas hériter de cette limite.
+    const csv = weekCsv(dates, [lines[1]!])
+
+    expect(csv).toContain(';Passage court, Traitement;À vérifier')
+  })
+
+  it('échappe un tag qui contient un point-virgule', () => {
+    // C'est le nom du tag qui vient de la saisie : l'échappement CSV le protège
+    // (docs/pieges.md §16).
+    const csv = weekCsv(dates, [{ ...lines[0]!, tags: ['Courses ; retour'] }])
 
     expect(csv).toContain('"Courses ; retour"')
   })

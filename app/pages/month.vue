@@ -35,6 +35,37 @@ const byAssistant = computed(() => summary.value?.byAssistant ?? [])
 const byBeneficiary = computed(() => summary.value?.byBeneficiary ?? [])
 const byDay = computed(() => summary.value?.byDay ?? [])
 
+/**
+ * Solde prévisionnel : ce qui reste à faire ce mois-ci, et ce qu'il coûtera. Le calcul vit dans
+ * `app/utils/summary.ts`, testé sans base — cet écran ne fait que le mettre en forme.
+ */
+const beneficiaryForecasts = computed(() => forecastByBeneficiary(byBeneficiary.value))
+const forecast = computed(() => forecastSummary(beneficiaryForecasts.value))
+
+/** Un bénéficiaire et son solde prévisionnel : les deux se lisent ensemble à l'écran. */
+const beneficiaryCards = computed(() =>
+  byBeneficiary.value.map((line, index) => ({ line, forecast: beneficiaryForecasts.value[index]! })),
+)
+
+/**
+ * Y a-t-il un prévisionnel à annoncer ? Non : le bloc disparaît.
+ *
+ * Un mois entièrement réalisé n'a pas de solde à montrer — le « Reste » de chaque bénéficiaire
+ * dit déjà ce qu'il reste. Le seuil est le même que celui du badge qu'il remplace : du prévu,
+ * ou du « à vérifier » (qui n'est pas encore confirmé, donc encore devant nous).
+ */
+const hasForecast = computed(
+  () => (totals.value?.plannedMinutes ?? 0) + (totals.value?.toValidateMinutes ?? 0) > 0,
+)
+
+/**
+ * Le taux horaire est-il communiqué à ce rôle ?
+ *
+ * C'est le DTO qui tranche (champ absent pour un lecteur), et non l'écran qui devinerait le
+ * rôle : ainsi une colonne « À saisir » ne s'affiche jamais à la place d'un montant interdit.
+ */
+const ratesVisible = computed(() => byBeneficiary.value.some(line => line.hourlyRateCents !== undefined))
+
 /** Un mois sans créneau du tout, à distinguer d'un mois où rien n'a encore été réalisé. */
 const isEmpty = computed(() => byDay.value.length === 0)
 
@@ -201,12 +232,68 @@ function assistantContext(line: SummaryLine): string {
       </UiEmptyState>
 
       <template v-else>
-        <UiBadge
-          v-if="(totals?.plannedMinutes ?? 0) > 0"
-          tone="neutral"
+        <!-- Solde prévisionnel du mois : ce qui reste à faire, et ce que ça coûte. Une grille
+             de cases plutôt qu'une ligne grise — chaque chiffre porte sa lecture. Le montant
+             se calcule au taux DE CHAQUE bénéficiaire (`app/utils/summary.ts`), et il vaut
+             « À saisir » dès qu'un taux manque : un total partiel présenté comme complet
+             finirait sur un virement. -->
+        <section
+          v-if="hasForecast"
+          class="section"
         >
-          Prévisionnel <span class="num ml-1">{{ formatDuration(totals?.plannedMinutes ?? 0) }}</span>
-        </UiBadge>
+          <h2 class="eyebrow font-sans">
+            Solde prévisionnel du mois
+          </h2>
+
+          <div class="synthese synthese--previsionnel">
+            <div class="synthese__case">
+              <span class="synthese__valeur">{{ formatDuration(totals?.plannedMinutes ?? 0) }}</span>
+              <span class="synthese__libelle">prévu, pas encore fait</span>
+            </div>
+
+            <div class="synthese__case">
+              <span class="synthese__valeur">{{ formatDuration(forecast.forecastMinutes) }}</span>
+              <span class="synthese__libelle">heures prévisionnelles</span>
+            </div>
+
+            <div
+              v-if="ratesVisible"
+              class="synthese__case"
+            >
+              <span class="synthese__valeur">
+                {{ forecast.amountCents === null ? 'À saisir' : formatEuros(forecast.amountCents) }}
+              </span>
+              <span class="synthese__libelle">
+                montant prévisionnel
+                <template v-if="forecast.missingRateCount > 0">
+                  · {{ forecast.missingRateCount }} taux manquant{{ forecast.missingRateCount > 1 ? 's' : '' }}
+                </template>
+              </span>
+            </div>
+
+            <!-- La case qui compte : le solde après prévisionnel. Sa bordure la met en avant
+                 (elle ne code aucune donnée), et un solde négatif passe l'encre en rouge —
+                 la couleur dit alors une alerte, comme le dépassement d'un volume. -->
+            <div
+              v-if="forecast.balanceMinutes !== null"
+              class="synthese__case synthese__case--cle"
+              :class="{ 'synthese__case--depassement': forecast.balanceMinutes < 0 }"
+            >
+              <span class="synthese__valeur">{{ formatDuration(Math.abs(forecast.balanceMinutes)) }}</span>
+              <span class="synthese__libelle">
+                {{ forecast.balanceMinutes < 0 ? 'de dépassement' : 'restant à planifier' }}
+                <template v-if="forecast.withoutVolumeCount > 0">
+                  · hors {{ forecast.withoutVolumeCount }} sans volume
+                </template>
+                <!-- L'agrégat peut rester positif alors qu'un bénéficiaire, lui, a dépassé SON
+                     volume : sans ce compte, un total rassurant cacherait l'alerte. -->
+                <template v-if="forecast.exceededCount > 0">
+                  · <span class="recap__depassement">{{ forecast.exceededCount }} en dépassement</span>
+                </template>
+              </span>
+            </div>
+          </div>
+        </section>
 
         <section
           v-if="byAssistant.length > 0"
@@ -241,7 +328,7 @@ function assistantContext(line: SummaryLine): string {
         </section>
 
         <section
-          v-if="byBeneficiary.length > 0"
+          v-if="beneficiaryCards.length > 0"
           class="section"
         >
           <h2 class="eyebrow font-sans">
@@ -249,22 +336,22 @@ function assistantContext(line: SummaryLine): string {
           </h2>
 
           <UiCard
-            v-for="line in byBeneficiary"
-            :key="line.id"
+            v-for="card in beneficiaryCards"
+            :key="card.line.id"
           >
             <div class="card__body recap__ligne">
               <div class="flex items-baseline justify-between gap-2">
                 <p class="recap__nom">
-                  {{ line.name }}
+                  {{ card.line.name }}
                 </p>
                 <p class="recap__chiffres">
-                  {{ formatDuration(line.declaredMinutes) }}
+                  {{ formatDuration(card.line.declaredMinutes) }}
                 </p>
               </div>
 
               <!-- Volume autorisé : la seule référence MENSUELLE du modèle, donc le seul
                    ratio exact. Une référence absente n'affiche aucun ratio. -->
-              <template v-if="line.referenceMinutes !== null">
+              <template v-if="card.line.referenceMinutes !== null">
                 <div class="flex items-center gap-2">
                   <span
                     class="recap__piste"
@@ -272,18 +359,18 @@ function assistantContext(line: SummaryLine): string {
                   >
                     <span
                       class="recap__remplissage"
-                      :class="{ 'recap__remplissage--depassement': exceedsReference(line) }"
-                      :style="{ width: `${durationProportion(line.declaredMinutes, line.referenceMinutes)}%` }"
+                      :class="{ 'recap__remplissage--depassement': exceedsReference(card.line) }"
+                      :style="{ width: `${durationProportion(card.line.declaredMinutes, card.line.referenceMinutes)}%` }"
                     />
                   </span>
-                  <span class="recap__chiffres">sur {{ formatDuration(line.referenceMinutes) }}</span>
+                  <span class="recap__chiffres">sur {{ formatDuration(card.line.referenceMinutes) }}</span>
                 </div>
-                <p :class="exceedsReference(line) ? 'recap__depassement' : 'recap__contexte'">
-                  <template v-if="exceedsReference(line)">
-                    Dépassement de {{ formatDuration(Math.abs(remainingMinutes(line) ?? 0)) }}
+                <p :class="exceedsReference(card.line) ? 'recap__depassement' : 'recap__contexte'">
+                  <template v-if="exceedsReference(card.line)">
+                    Dépassement de {{ formatDuration(Math.abs(remainingMinutes(card.line) ?? 0)) }}
                   </template>
                   <template v-else>
-                    Reste {{ formatDuration(remainingMinutes(line)) }}
+                    Reste {{ formatDuration(remainingMinutes(card.line)) }}
                   </template>
                 </p>
               </template>
@@ -292,9 +379,33 @@ function assistantContext(line: SummaryLine): string {
                 v-else
                 class="recap__contexte"
               >
-                {{ line.passages > 1 ? `${line.passages} passages` : `${line.passages} passage` }}
+                {{ card.line.passages > 1 ? `${card.line.passages} passages` : `${card.line.passages} passage` }}
                 · aucun volume autorisé saisi
               </p>
+
+              <!-- Prévisionnel de CE bénéficiaire, à SON taux. Le solde d'ici est celui d'APRÈS
+                   prévisionnel : le « Reste » ci-dessus ne parle que du réalisé, donc de la
+                   déclaration. Les deux se complètent, ils ne se répètent pas. -->
+              <template v-if="card.forecast.forecastMinutes > card.line.declaredMinutes">
+                <p class="recap__contexte">
+                  Prévisionnel {{ formatDuration(card.forecast.forecastMinutes) }}
+                  <template v-if="card.forecast.amountCents !== null">
+                    · {{ formatEuros(card.forecast.amountCents) }}
+                  </template>
+                </p>
+
+                <p
+                  v-if="card.forecast.balanceMinutes !== null"
+                  :class="card.forecast.balanceMinutes < 0 ? 'recap__depassement' : 'recap__contexte'"
+                >
+                  <template v-if="card.forecast.balanceMinutes < 0">
+                    Dépassement de {{ formatDuration(Math.abs(card.forecast.balanceMinutes)) }} après prévisionnel
+                  </template>
+                  <template v-else>
+                    Après prévisionnel : reste {{ formatDuration(card.forecast.balanceMinutes) }}
+                  </template>
+                </p>
+              </template>
             </div>
           </UiCard>
         </section>

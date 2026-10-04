@@ -35,6 +35,12 @@
     @apply truncate text-sm font-medium text-ink;
   }
 
+  // Tags de la carte de liste : cette carte vit dans le flux, donc elle les montre TOUS —
+  // aucune pastille « +N » ici, contrairement à la grille horaire.
+  .creneau__tags {
+    @apply flex flex-wrap items-center gap-1;
+  }
+
   // Ligne des noms : en `flex`, pour aligner verticalement l'icône de rôle sur le texte.
   // Un conteneur flex n'ellipse PAS ses enfants : le `truncate` vit donc sur les groupes
   // icône + nom, pas ici.

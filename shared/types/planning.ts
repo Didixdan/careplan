@@ -19,7 +19,11 @@ export interface Appointment {
   date: string
   start: string
   end: string
-  title: string
+  /**
+   * Tags du créneau, DANS L'ORDRE d'ajout. Le premier intitulé libre a disparu : un créneau
+   * se décrit par son bénéficiaire (le titre affiché) et par ce vocabulaire partagé.
+   */
+  tags: TagOption[]
   status: Status
   beneficiary: string
   /** Identifiant du bénéficiaire, pour présélectionner le sélecteur d'édition. */
@@ -74,10 +78,27 @@ export interface PersonOption {
   name: string
 }
 
+/**
+ * Tag du vocabulaire partagé : identifiant technique et libellé affichable. Les écrans
+ * d'écriture ne manipulent que le NOM (`tags: string[]`) : le serveur résout ou crée le tag.
+ */
+export interface TagOption {
+  id: string
+  name: string
+}
+
+/** Tag du catalogue avec son usage — écran de gestion (`GET /api/tags`). */
+export interface Tag extends TagOption {
+  /** Nombre de créneaux qui le portent : c'est lui qui explique un refus de suppression. */
+  usageCount: number
+}
+
 /** Listes de référence de l'écran de création d'un créneau (`GET /api/appointments/options`). */
 export interface AppointmentFormOptions {
   beneficiaries: PersonOption[]
   assistants: PersonOption[]
+  /** Catalogue complet : l'autocomplete filtre côté client, sans requête par frappe. */
+  tags: TagOption[]
 }
 
 /**
@@ -111,6 +132,15 @@ export interface SummaryLine extends PersonSummary {
    * saisie, auquel cas aucun ratio n'est affiché.
    */
   referenceMinutes: number | null
+  /**
+   * Taux horaire du bénéficiaire, en centimes. `null` = pas encore saisi ; **absent** = non
+   * communiqué à ce rôle (l'écran ne doit donc pas écrire « À saisir » à sa place).
+   *
+   * Rempli **uniquement sur les lignes de bénéficiaire**, et seulement pour qui a l'usage d'un
+   * montant : l'admin. Un aidant reçoit ses montants par son export CESU, et un lecteur
+   * (bénéficiaire ou famille) n'a pas à voir le coût employeur.
+   */
+  hourlyRateCents?: number | null
   /**
    * Kilomètres déclarés dans le mois. Rempli **uniquement pour les aidants** : un kilomètre
    * ne s'attribue à aucun bénéficiaire, c'est le principe même de la déclaration journalière.

@@ -30,7 +30,7 @@ describe('Kilomètres du jour', () => {
 
       cy.createFreeAppointment({
         date: today(),
-        title: 'Vérif kilomètres',
+        tags: ['Vérif kilomètres'],
         status: 'planned',
         beneficiaryId: beneficiaries[0]!.id,
         primaryAssistantId: mine.id,
@@ -63,7 +63,7 @@ describe('Kilomètres du jour', () => {
 
       cy.createFreeAppointment({
         date: today(),
-        title: 'Vérif kilomètres',
+        tags: ['Vérif kilomètres'],
         status: 'planned',
         beneficiaryId: beneficiaries[0]!.id,
         primaryAssistantId: mine.id,
@@ -85,7 +85,7 @@ describe('Kilomètres du jour', () => {
 
       cy.createFreeAppointment({
         date: today(),
-        title: 'Vérif kilomètres',
+        tags: ['Vérif kilomètres'],
         status: 'planned',
         beneficiaryId: beneficiaries[0]!.id,
         primaryAssistantId: mine.id,

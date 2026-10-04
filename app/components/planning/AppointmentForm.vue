@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Appointment, PersonOption, Status } from '~~/shared/types/planning'
+import type { Appointment, PersonOption, Status, TagOption } from '~~/shared/types/planning'
 
 /**
  * Formulaire de créneau, en CRÉATION et en MODIFICATION — rendu dans une modale.
@@ -14,6 +14,8 @@ import type { Appointment, PersonOption, Status } from '~~/shared/types/planning
 const props = defineProps<{
   beneficiaries: PersonOption[]
   assistants: PersonOption[]
+  /** Catalogue des tags, chargé avec les autres listes de référence de la vue. */
+  catalogue: TagOption[]
   /** Date proposée en création. */
   defaultDate?: string
   /** Créneau à modifier ; absent ou `null` = création. */
@@ -46,7 +48,8 @@ const primaryAssistantId = ref(props.appointment?.primaryAssistantId ?? props.as
 const date = ref(props.appointment?.date ?? props.defaultDate ?? today())
 const start = ref(props.appointment?.start ?? '08:00')
 const end = ref(props.appointment?.end ?? '10:00')
-const title = ref(props.appointment?.title ?? '')
+/** Tags du créneau, par NOM et dans l'ordre : le serveur résout ou crée les tags manquants. */
+const tags = ref<string[]>(props.appointment?.tags.map(tag => tag.name) ?? [])
 const status = ref<Status>(props.appointment?.status ?? 'planned')
 const submitting = ref(false)
 const deleting = ref(false)
@@ -67,11 +70,18 @@ const crossesMidnight = computed(() => (parseTime(end.value) ?? 0) <= (parseTime
  *  valider un formulaire qui échouera en 400. Couvre aussi une lecture qui a échoué. */
 const ready = computed(() => props.beneficiaries.length > 0 && props.assistants.length > 0)
 
+/**
+ * Un créneau doit dire ce qu'on vient y faire : au moins un tag, comme l'ancien intitulé.
+ * Le serveur refuse de toute façon en 400 — l'écran ne doit pas proposer une action qui
+ * échouera, et le bouton désactivé est la seule façon de l'annoncer AVANT l'envoi.
+ */
+const complete = computed(() => ready.value && tags.value.length > 0)
+
 const body = computed(() => ({
   date: date.value,
   start: start.value,
   end: end.value,
-  title: title.value,
+  tags: tags.value,
   status: status.value,
   beneficiaryId: beneficiaryId.value,
   primaryAssistantId: primaryAssistantId.value,
@@ -100,7 +110,8 @@ async function save() {
 async function remove() {
   const appointment = props.appointment
   if (!appointment) return
-  if (!confirm(`Supprimer « ${appointment.title} » du ${longDate(appointment.date)} ?`)) return
+  // L'intitulé n'existe plus : on nomme le passage par sa date et son bénéficiaire.
+  if (!confirm(`Supprimer le passage chez ${appointment.beneficiary} du ${longDate(appointment.date)} ?`)) return
 
   message.value = ''
   deleting.value = true
@@ -257,16 +268,21 @@ async function remove() {
       <div class="field">
         <label
           class="field__label field__label--required"
-          for="appointment-title"
-        >Intitulé</label>
-        <input
-          id="appointment-title"
-          v-model="title"
-          class="field__control"
-          type="text"
-          placeholder="Aide à la toilette"
-          required
+          for="appointment-tags"
+        >Tags</label>
+        <!-- Le vocabulaire partagé remplace l'ancien intitulé libre : il propose l'existant et
+             crée le manquant. Au moins un tag, comme l'intitulé l'était. -->
+        <PlanningTagPicker
+          id="appointment-tags"
+          v-model="tags"
+          :catalogue="catalogue"
+        />
+        <p
+          v-if="tags.length === 0"
+          class="field__hint"
         >
+          Choisissez au moins un tag : c'est lui qui décrit le passage.
+        </p>
       </div>
 
       <p
@@ -307,7 +323,7 @@ async function remove() {
           type="submit"
           variant="primary"
           :loading="submitting"
-          :disabled="!ready"
+          :disabled="!complete"
         >
           Enregistrer
         </UiButton>

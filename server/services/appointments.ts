@@ -7,6 +7,7 @@ import { durationInMinutes } from '../../app/utils/duration'
 import type { CesuLine, WeekLine } from '../../app/utils/export'
 import { checkTimeRange, GRID_END_MINUTES, GRID_START_MINUTES, type TimeRangeProblem } from '../../app/utils/grid'
 import { isStatus, quickTransitions } from '../../app/utils/status'
+import { checkTagNames, cleanTagNames, MAX_TAGS, type TagProblem } from '../../app/utils/tags'
 import {
   summarise,
   summariseByAssistant,
@@ -20,10 +21,12 @@ import type {
   PersonSummary,
   Role,
   SummaryLine,
+  TagOption,
 } from '../../shared/types/planning'
-import { appointmentAssistants, appointments, assistants, beneficiaries } from '../db/schema'
+import { appointmentAssistants, appointmentTags, appointments, assistants, beneficiaries, tags } from '../db/schema'
 import { useDb } from '../utils/db'
 import { monthlyMileage } from './mileage'
+import { listTagOptions, resolveTagIds } from './tags'
 
 const fullName = (firstName: string, lastName: string) => `${firstName} ${lastName}`.trim()
 
@@ -120,7 +123,6 @@ export async function listAppointments(options: AppointmentQuery): Promise<Appoi
       date: appointments.date,
       start: appointments.startTime,
       end: appointments.endTime,
-      title: appointments.title,
       status: appointments.status,
       beneficiaryFirstName: beneficiaries.firstName,
       beneficiaryNom: beneficiaries.lastName,
@@ -157,6 +159,28 @@ export async function listAppointments(options: AppointmentQuery): Promise<Appoi
     coParAppointment.set(co.appointmentId, list)
   }
 
+  // Les tags, dans l'ORDRE enregistré (`position`) : `inArray` ne garantit aucun ordre, et
+  // c'est cet ordre qui décide des trois tags affichés sur une carte. Une seule requête pour
+  // tous les créneaux de la fenêtre, comme les co-aidants.
+  const tagLignes = await db
+    .select({
+      appointmentId: appointmentTags.appointmentId,
+      position: appointmentTags.position,
+      id: tags.id,
+      name: tags.name,
+    })
+    .from(appointmentTags)
+    .innerJoin(tags, eq(tags.id, appointmentTags.tagId))
+    .where(inArray(appointmentTags.appointmentId, ids))
+    .orderBy(asc(appointmentTags.position))
+
+  const tagsParAppointment = new Map<string, TagOption[]>()
+  for (const tag of tagLignes) {
+    const list = tagsParAppointment.get(tag.appointmentId) ?? []
+    list.push({ id: tag.id, name: tag.name })
+    tagsParAppointment.set(tag.appointmentId, list)
+  }
+
   return rows.map((row) => {
     const coAssistants = coParAppointment.get(row.id) ?? []
     return {
@@ -164,7 +188,7 @@ export async function listAppointments(options: AppointmentQuery): Promise<Appoi
       date: row.date,
       start: row.start,
       end: row.end,
-      title: row.title,
+      tags: tagsParAppointment.get(row.id) ?? [],
       status: row.status as Appointment['status'],
       beneficiary: fullName(row.beneficiaryFirstName, row.beneficiaryNom),
       beneficiaryId: row.beneficiaryId,
@@ -229,13 +253,27 @@ export async function summariseMonth(month: string, user?: UserFilter): Promise<
 
   const beneficiaryRows = beneficiaryIds.length > 0
     ? await db
-        .select({ id: beneficiaries.id, authorizedMinutesMonth: beneficiaries.authorizedMinutesMonth })
+        .select({
+          id: beneficiaries.id,
+          authorizedMinutesMonth: beneficiaries.authorizedMinutesMonth,
+          hourlyRateCents: beneficiaries.hourlyRateCents,
+        })
         .from(beneficiaries)
         .where(inArray(beneficiaries.id, beneficiaryIds))
     : []
 
   const contractedMinutes = new Map(assistantRows.map(row => [row.id, row.contractedMinutes]))
   const authorizedMinutes = new Map(beneficiaryRows.map(row => [row.id, row.authorizedMinutesMonth]))
+  const hourlyRates = new Map(beneficiaryRows.map(row => [row.id, row.hourlyRateCents]))
+
+  /**
+   * Le taux horaire n'est chargé que pour qui a l'usage d'un montant : l'admin, qui paie.
+   *
+   * Un lecteur (bénéficiaire ou famille) n'a pas à voir le coût employeur, et un aidant reçoit
+   * ses montants par son export CESU. Le champ est donc ABSENT de son DTO — `undefined` veut
+   * dire « non communiqué », à ne pas confondre avec `null`, « pas encore saisi ».
+   */
+  const showRates = !user || user.role === 'admin'
 
   /** Une référence absente reste absente : on n'affiche pas un ratio contre rien. */
   const withReference = (line: PersonSummary, reference: number | null | undefined): SummaryLine => ({
@@ -255,7 +293,12 @@ export async function summariseMonth(month: string, user?: UserFilter): Promise<
 
   const beneficiaryLines = allowed.beneficiaries
     ? summariseByBeneficiary(appointments)
-        .map(line => withReference(line, authorizedMinutes.get(line.id)))
+        .map(line => ({
+          ...withReference(line, authorizedMinutes.get(line.id)),
+          // Champ ABSENT quand le rôle n'y a pas droit : l'écran distingue « non communiqué »
+          // de « pas saisi », sans quoi il écrirait « À saisir » à la place du néant.
+          ...(showRates ? { hourlyRateCents: hourlyRates.get(line.id) ?? null } : {}),
+        }))
     : []
 
   return {
@@ -423,7 +466,7 @@ export async function weekLines(week: string, user?: UserFilter): Promise<{ date
       end: appointment.end,
       assistantNames: [appointment.primaryAssistant, ...appointment.coAssistants].filter(name => name !== ''),
       beneficiaryName: appointment.beneficiary,
-      title: appointment.title,
+      tags: appointment.tags.map(tag => tag.name),
       status: appointment.status,
     })),
   }
@@ -472,6 +515,8 @@ export async function listAppointmentOptions(user: UserFilter): Promise<Appointm
   return {
     beneficiaries: beneficiaryRows.map(toOption),
     assistants: assistantRows.map(toOption),
+    // Le catalogue entier : l'autocomplete filtre côté client, donc aucune requête par frappe.
+    tags: await listTagOptions(),
   }
 }
 
@@ -574,7 +619,8 @@ interface AppointmentPayload {
   date: string
   start: string
   end: string
-  title: string
+  /** Noms des tags, dans l'ordre d'affichage. Le serveur résout ou crée les tags manquants. */
+  tags: string[]
   status?: string
   beneficiaryId: string
   primaryAssistantId: string
@@ -583,8 +629,14 @@ interface AppointmentPayload {
 export type CreateAppointment = AppointmentPayload
 export type EditAppointment = AppointmentPayload
 
-/** Contrôles communs ; `$` normalise l'intitulé et le statut par défaut. */
-function validatePayload(input: AppointmentPayload): { title: string, status: string } {
+/** Refus d'une liste de tags → message affiché (même table que les plages horaires). */
+const TAG_MESSAGES: Record<TagProblem, string> = {
+  'empty': 'Au moins un tag est requis.',
+  'too-many': `${MAX_TAGS} tags au maximum.`,
+}
+
+/** Contrôles communs ; `$` normalise les tags et le statut par défaut. */
+function validatePayload(input: AppointmentPayload): { tags: string[], status: string } {
   if (!isCivilDate(input.date)) {
     throw createError({ statusCode: 400, statusMessage: 'Date invalide.' })
   }
@@ -593,9 +645,12 @@ function validatePayload(input: AppointmentPayload): { title: string, status: st
   // déplacement dans la grille, sans quoi une veille ne serait jamais saisissable.
   assertValidTimeRange(input.start, input.end)
 
-  const title = input.title?.trim() ?? ''
-  if (!title) {
-    throw createError({ statusCode: 400, statusMessage: 'Intitulé requis.' })
+  // Les tags remplacent l'ancien intitulé : comme lui, ils décrivent ce qu'on vient faire.
+  // La règle est pure et testée (`checkTagNames`), le message vit ici.
+  const tags = cleanTagNames(input.tags ?? [])
+  const tagProblem = checkTagNames(tags)
+  if (tagProblem) {
+    throw createError({ statusCode: 400, statusMessage: TAG_MESSAGES[tagProblem] })
   }
 
   const status = input.status ?? 'planned'
@@ -603,7 +658,7 @@ function validatePayload(input: AppointmentPayload): { title: string, status: st
     throw createError({ statusCode: 400, statusMessage: 'Statut invalide.' })
   }
 
-  return { title, status }
+  return { tags, status }
 }
 
 /**
@@ -646,7 +701,7 @@ export async function createAppointment(input: CreateAppointment, user: UserFilt
     throw createError({ statusCode: 403, statusMessage: 'Vous ne pouvez créer que vos propres créneaux.' })
   }
 
-  const { title, status } = validatePayload(input)
+  const { tags: tagNames, status } = validatePayload(input)
 
   await assertReferencesExist(input.beneficiaryId, input.primaryAssistantId)
 
@@ -658,21 +713,28 @@ export async function createAppointment(input: CreateAppointment, user: UserFilt
   })
 
   const db = useDb()
-  const [created] = await db.insert(appointments).values({
-    date: input.date,
-    startTime: input.start,
-    endTime: input.end,
-    title: title,
-    status: status,
-    beneficiaryId: input.beneficiaryId,
-    primaryAssistantId: input.primaryAssistantId,
-  }).returning({ id: appointments.id })
+  return db.transaction(async (tx) => {
+    const [created] = await tx.insert(appointments).values({
+      date: input.date,
+      startTime: input.start,
+      endTime: input.end,
+      status: status,
+      beneficiaryId: input.beneficiaryId,
+      primaryAssistantId: input.primaryAssistantId,
+    }).returning({ id: appointments.id })
 
-  return { id: created!.id }
+    const tagIds = await resolveTagIds(tx, tagNames)
+
+    await tx.insert(appointmentTags).values(
+      tagIds.map((tagId, position) => ({ appointmentId: created!.id, tagId, position })),
+    )
+
+    return { id: created!.id }
+  })
 }
 
 /**
- * Modifie un créneau : intitulé, statut, bénéficiaire, aidant principal et horaires — la
+ * Modifie un créneau : tags, statut, bénéficiaire, aidant principal et horaires — la
  * DURÉE peut changer, contrairement au déplacement (`moveAppointment`), qui ne fait que
  * translater un créneau dans la grille.
  *
@@ -703,7 +765,7 @@ export async function editAppointment(id: string, input: EditAppointment, user: 
     })
   }
 
-  const { title, status } = validatePayload(input)
+  const { tags: tagNames, status } = validatePayload(input)
 
   await assertReferencesExist(input.beneficiaryId, input.primaryAssistantId)
 
@@ -717,22 +779,33 @@ export async function editAppointment(id: string, input: EditAppointment, user: 
     excludedId: id,
   })
 
-  await db.update(appointments).set({
-    date: input.date,
-    startTime: input.start,
-    endTime: input.end,
-    title: title,
-    status: status,
-    beneficiaryId: input.beneficiaryId,
-    primaryAssistantId: input.primaryAssistantId,
-  }).where(eq(appointments.id, id))
+  // Le créneau et ses tags changent ensemble : une liste à moitié remplacée serait un
+  // créneau décrit par autre chose que ce que la personne vient de valider.
+  await db.transaction(async (tx) => {
+    await tx.update(appointments).set({
+      date: input.date,
+      startTime: input.start,
+      endTime: input.end,
+      status: status,
+      beneficiaryId: input.beneficiaryId,
+      primaryAssistantId: input.primaryAssistantId,
+    }).where(eq(appointments.id, id))
+
+    // Remplacement complet, dans l'ordre reçu : l'édition porte sur la liste entière.
+    await tx.delete(appointmentTags).where(eq(appointmentTags.appointmentId, id))
+
+    const tagIds = await resolveTagIds(tx, tagNames)
+    await tx.insert(appointmentTags).values(
+      tagIds.map((tagId, position) => ({ appointmentId: id, tagId, position })),
+    )
+  })
 
   return true
 }
 
 /**
- * Supprime un créneau et ses co-aidants. `false` si le créneau n'existe pas (404) ; 403 si
- * l'utilisateur n'a pas le droit d'y toucher.
+ * Supprime un créneau, ses co-aidants et ses tags. `false` si le créneau n'existe pas (404) ;
+ * 403 si l'utilisateur n'a pas le droit d'y toucher.
  */
 export async function deleteAppointment(id: string, user: UserFilter): Promise<boolean> {
   const db = useDb()
@@ -754,10 +827,11 @@ export async function deleteAppointment(id: string, user: UserFilter): Promise<b
     'supprimer',
   )
 
-  // Le schéma ne déclare aucune cascade : les co-aidants partent d'abord, sinon la clé
-  // étrangère bloque la suppression.
+  // Le schéma ne déclare aucune cascade : les co-aidants et les tags partent d'abord, sinon
+  // la clé étrangère bloque la suppression.
   await db.transaction(async (tx) => {
     await tx.delete(appointmentAssistants).where(eq(appointmentAssistants.appointmentId, id))
+    await tx.delete(appointmentTags).where(eq(appointmentTags.appointmentId, id))
     await tx.delete(appointments).where(eq(appointments.id, id))
   })
 

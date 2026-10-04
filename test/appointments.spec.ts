@@ -8,7 +8,7 @@ function appointment(id: string, date: string, start: string, end: string): Appo
     date,
     start,
     end,
-    title: 'Passage',
+    tags: [{ id: 'tag-courses', name: 'Courses' }],
     status: 'planned',
     beneficiary: 'Élise Dupont',
     beneficiaryId: 'benef-1',

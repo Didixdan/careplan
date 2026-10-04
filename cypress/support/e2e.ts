@@ -10,13 +10,15 @@
  *   veut un créneau le crée, puis le supprime.
  */
 
+/**
+ * Comptes de test. **Ce sont ceux de `server/db/seed.ts`** : le seed leur donne deux mots de
+ * passe différents (administration, comptes de démonstration), donc chacun porte le sien.
+ */
 export const ACCOUNTS = {
-  admin: 'admin@careplan.local',
-  assistant: 'camille@careplan.local',
-  viewer: 'famille.dupont@careplan.local',
+  admin: { email: 'admin@careplan.prod', password: '@59y%P#5' },
+  assistant: { email: 'damien.martin66@outlook.fr', password: 'quZx$%A7' },
+  viewer: { email: 'famille.dupont@careplan.local', password: 'quZx$%A7' },
 } as const
-
-export const PASSWORD = 'careplan'
 
 /** La date civile locale, au format `'YYYY-MM-DD'` (même règle que `app/utils/date.ts`). */
 export function today(): string {
@@ -149,27 +151,26 @@ Cypress.Commands.overwrite('visit', (original, ...args: unknown[]) => {
 Cypress.Commands.add('signIn', (role: keyof typeof ACCOUNTS) => {
   cy.session(role, () => {
     cy.visit('/login')
-    cy.get('#email').clear().type(ACCOUNTS[role])
-    cy.get('#password').clear().type(PASSWORD)
+    cy.get('#email').clear().type(ACCOUNTS[role].email)
+    cy.get('#password').clear().type(ACCOUNTS[role].password)
     cy.contains('button', 'Se connecter').click()
     cy.location('pathname').should('not.equal', '/login')
   })
 })
 
 /**
- * Crée un créneau à la première plage que le SERVEUR accepte.
+ * Crée un créneau à la première plage de `starts` que le SERVEUR accepte.
  *
  * Un scénario ne peut pas supposer qu'une heure est libre : un créneau rescapé d'une exécution
  * précédente occupe la place, et la création échoue en 409 — un échec qui n'a rien à voir avec
  * ce que le test vérifie. La règle de chevauchement reste donc écrite UNE fois, côté serveur :
  * on la lui demande, au lieu de la réimplémenter ici.
- *
- * Les plages candidates partent du HAUT de la grille (07h) : la carte reste à l'écran, et il
- * reste de la place SOUS elle — ce dont le glisser-déposer a besoin pour descendre.
  */
-Cypress.Commands.add('createFreeAppointment', (payload: Record<string, unknown>, hours = 1) => {
-  const starts = candidateStarts(hours)
-
+function createAtFirstAccepted(
+  starts: string[],
+  payload: Record<string, unknown>,
+  hours: number,
+): Cypress.Chainable<PlannedSlot> {
   const attempt = (index: number): Cypress.Chainable<PlannedSlot> => {
     const start = starts[index]
 
@@ -197,7 +198,15 @@ Cypress.Commands.add('createFreeAppointment', (payload: Record<string, unknown>,
   }
 
   return attempt(0)
-})
+}
+
+/**
+ * Crée un créneau à la première plage acceptée, en partant du HAUT de la grille (07h) : la carte
+ * reste à l'écran, et il reste de la place SOUS elle — ce dont le glisser-déposer a besoin pour
+ * descendre.
+ */
+Cypress.Commands.add('createFreeAppointment', (payload: Record<string, unknown>, hours = 1) =>
+  createAtFirstAccepted(candidateStarts(hours), payload, hours))
 
 /**
  * Rend une plage libre SANS y laisser de créneau.
@@ -226,12 +235,14 @@ Cypress.Commands.add('referenceLists', () => {
 /**
  * Amène une carte de la grille à l'écran, avant de la cliquer ou de la glisser.
  *
+ * Le repère est un **tag** (unique au scénario), et non le titre de la carte : le titre est
+ * désormais le bénéficiaire, donc deux passages chez la même personne dans la même journée
+ * porteraient le même — alors que le scénario en vise un précis.
+ *
  * Deux raisons, vérifiées :
- * - la grille de la semaine s'aimante colonne par colonne (`snap-x snap-mandatory`, verrouillé
- *   par `verify:css`) : un défilement PROGRAMMÉ y est ramené au point d'accroche courant, si
- *   bien que Cypress croit la carte amenée à l'écran alors qu'elle est repartie hors champ, et
- *   le clic part dans le vide (« element is being covered by another element »). Le défilement
- *   du navigateur, lui, tient compte de l'aimantation ;
+ * - le cadre d'un jour de la vue semaine défile (`overflow-y`, borné à quatre heures) : la carte
+ *   peut être hors de la zone visible du cadre, et `scrollIntoView` fait défiler le bon
+ *   ancêtre — le cadre comme la page — avant que le geste ne soit mesuré ;
  * - la vue jour place un créneau de 20 h à plus de 900 px du haut : sans défilement, les
  *   coordonnées du glisser-déposer tombent hors de la fenêtre, et `elementFromPoint` ne trouve
  *   alors aucune grille.
@@ -239,9 +250,9 @@ Cypress.Commands.add('referenceLists', () => {
  * `inline: 'center'` vise le MILIEU de la colonne : une carte collée au bord laisse trop peu
  * de place pour la déplacer d'un quart d'heure.
  */
-export function revealCard(title: string): void {
-  cy.contains('.creneau-horaire__titre', title).then(async ($titre) => {
-    const carte = $titre[0] as HTMLElement
+export function revealCard(repertoire: string): void {
+  cy.contains('.creneau-horaire', repertoire).then(async ($carte) => {
+    const carte = $carte[0] as HTMLElement
 
     carte.scrollIntoView({ block: 'center', inline: 'center' })
     await whenSettled(carte)
@@ -280,5 +291,29 @@ function whenSettled(element: HTMLElement, timeout = 3_000): Promise<void> {
 export function cleanup(ids: string[]): void {
   afterEach(() => {
     for (const id of ids.splice(0)) cy.removeAppointment(id)
+  })
+}
+
+/**
+ * Supprime les tags créés par un test, APRÈS ses créneaux (le serveur refuse — 409 — de
+ * supprimer un tag encore utilisé).
+ *
+ * Les scénarios de tags doivent être aussi propres que les autres : un tag rescapé resterait
+ * au catalogue et ferait échouer la prochaine création du même nom (409).
+ */
+export function cleanupTags(names: string[]): void {
+  afterEach(() => {
+    const wanted = names.splice(0)
+    if (wanted.length === 0) return
+
+    cy.request('/api/tags').its('body').then((catalogue) => {
+      const byName = new Map((catalogue as { id: string, name: string }[]).map(tag => [tag.name, tag.id]))
+
+      for (const name of wanted) {
+        const id = byName.get(name)
+        // 409 : un créneau le porte encore (un test précédent a échoué) — on n'insiste pas.
+        if (id) cy.request({ method: 'DELETE', url: `/api/tags/${id}`, failOnStatusCode: false })
+      }
+    })
   })
 }

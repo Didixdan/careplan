@@ -12,12 +12,12 @@ describe('Vue jour : actions rapides et modale', () => {
   cleanup(created)
 
   /** Un créneau planifié AUJOURD'HUI, pour que la vue jour (qui affiche toujours aujourd'hui) le montre. */
-  function planToday(title: string) {
+  function planToday(tag: string) {
     return cy.referenceLists().then(({ beneficiaries, assistants }) => {
       return cy
         .createFreeAppointment({
           date: today(),
-          title,
+          tags: [tag],
           status: 'planned',
           beneficiaryId: beneficiaries[0].id,
           primaryAssistantId: assistants[0].id,

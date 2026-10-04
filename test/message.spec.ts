@@ -14,7 +14,7 @@ function appointment(options: {
   date: string
   start: string
   end: string
-  title?: string
+  tags?: string[]
   assistant?: string
   status?: Status
 }): Appointment {
@@ -24,7 +24,7 @@ function appointment(options: {
     date: options.date,
     start: options.start,
     end: options.end,
-    title: options.title ?? 'Aide à la toilette',
+    tags: (options.tags ?? ['Aide à la toilette']).map((name, index) => ({ id: `tag-${index}`, name })),
     status: options.status ?? 'planned',
     beneficiary: 'Élise Dupont',
     beneficiaryId: 'benef-1',
@@ -44,7 +44,7 @@ describe('beneficiaryWeekMessage', () => {
       beneficiaryName: 'Élise Dupont',
       dates,
       appointments: [
-        appointment({ date: '2026-09-30', start: '14:00', end: '15:30', title: 'Courses', assistant: 'Sofia Lambert' }),
+        appointment({ date: '2026-09-30', start: '14:00', end: '15:30', tags: ['Courses'], assistant: 'Sofia Lambert' }),
         appointment({ date: '2026-09-28', start: '09:00', end: '11:00' }),
       ],
     })
@@ -68,7 +68,7 @@ describe('beneficiaryWeekMessage', () => {
       dates,
       appointments: [
         appointment({ date: '2026-09-28', start: '09:00', end: '10:00' }),
-        appointment({ date: '2026-09-29', start: '09:00', end: '10:00', title: 'Annulé', status: 'cancelled' }),
+        appointment({ date: '2026-09-29', start: '09:00', end: '10:00', tags: ['Annulé'], status: 'cancelled' }),
       ],
     })
 
@@ -81,7 +81,7 @@ describe('beneficiaryWeekMessage', () => {
     const message = beneficiaryWeekMessage({
       beneficiaryName: 'Élise Dupont',
       dates,
-      appointments: [appointment({ date: '2026-10-01', start: '22:00', end: '01:00', title: 'Veille' })],
+      appointments: [appointment({ date: '2026-10-01', start: '22:00', end: '01:00', tags: ['Veille'] })],
     })
 
     expect(message).toContain('· 22:00 – 01:00 (lendemain) · Veille (Camille)')
@@ -93,9 +93,9 @@ describe('beneficiaryWeekMessage', () => {
       beneficiaryName: 'Élise Dupont',
       dates,
       appointments: [
-        appointment({ date: '2026-10-02', start: '09:00', end: '10:00', title: 'Vendredi' }),
-        appointment({ date: '2026-09-28', start: '14:00', end: '15:00', title: 'Lundi après-midi' }),
-        appointment({ date: '2026-09-28', start: '09:00', end: '10:00', title: 'Lundi matin' }),
+        appointment({ date: '2026-10-02', start: '09:00', end: '10:00', tags: ['Vendredi'] }),
+        appointment({ date: '2026-09-28', start: '14:00', end: '15:00', tags: ['Lundi après-midi'] }),
+        appointment({ date: '2026-09-28', start: '09:00', end: '10:00', tags: ['Lundi matin'] }),
       ],
     })
 

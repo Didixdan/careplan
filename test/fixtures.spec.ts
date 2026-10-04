@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { assistantFixtures, beneficiaryFixtures, buildAppointments } from '~~/server/db/fixtures'
+import { assistantFixtures, beneficiaryFixtures, buildAppointments, buildTags } from '~~/server/db/fixtures'
 import { durationInMinutes } from '~/utils/duration'
+import { checkTagNames, tagKey } from '~/utils/tags'
 
 /**
  * Données de référence (fixtures).
@@ -100,5 +101,38 @@ describe('buildAppointments', () => {
 
   it('est déterministe : deux appels donnent le même résultat', () => {
     expect(buildAppointments('2025-03-14')).toEqual(buildAppointments('2025-03-14'))
+  })
+
+  it('donne au moins un tag à chaque créneau', () => {
+    // L'application refuse d'enregistrer un créneau sans tag : le jeu de données ne peut pas
+    // contenir un cas qu'aucune saisie ne produirait.
+    for (const c of appointments) {
+      expect(checkTagNames(c.tags), `créneau ${c.id}`).toBeNull()
+    }
+  })
+
+  it('contient un créneau à plus de trois tags, pour que le « +N » soit visible', () => {
+    // La carte n'en montre que trois : sans ce cas, la règle ne serait exercée nulle part.
+    expect(appointments.some(c => c.tags.length > 3)).toBe(true)
+  })
+})
+
+describe('buildTags', () => {
+  const catalogue = buildTags()
+  const appointments = buildAppointments('2025-03-14')
+
+  it('contient exactement les tags des créneaux', () => {
+    const used = new Set(appointments.flatMap(c => c.tags))
+    expect(new Set(catalogue)).toEqual(used)
+  })
+
+  it('dédoublonne par clé, comme l’application', () => {
+    // Deux graphies d'une même clé ne doivent pas produire deux lignes au catalogue.
+    expect(new Set(catalogue.map(tagKey)).size).toBe(catalogue.length)
+  })
+
+  it('est trié par nom, accents compris', () => {
+    const sorted = [...catalogue].sort((a, b) => a.localeCompare(b, 'fr'))
+    expect(catalogue).toEqual(sorted)
   })
 })

@@ -43,16 +43,71 @@
   }
 
   .recap__remplissage {
-    @apply h-full rounded-tag bg-primary;
+    @apply block h-full rounded-tag bg-primary;
   }
 
   .recap__remplissage--depassement {
     @apply bg-danger;
   }
 
+  // En thème sombre, `--color-danger` (le rouge du bouton plein) devient un rouge profond :
+  // comme remplissage de barre sur une surface sombre, il disparaîtrait.
+  .dark .recap__remplissage--depassement {
+    @apply bg-danger-300;
+  }
+
   // Le dépassement est une alerte : il s'écrit en rouge, et la barre le double — la couleur
-  // n'est jamais le seul porteur de l'information.
+  // n'est jamais le seul porteur de l'information. `--color-danger-ink` est définie PAR MODE
+  // (`main.scss`) : `text-danger` seul serait illisible en thème sombre, et `verify:css`
+  // mesure ce contraste dans les deux thèmes.
   .recap__depassement {
-    @apply text-xs font-medium text-danger;
+    @apply text-xs font-medium;
+    color: var(--color-danger-ink);
+  }
+
+  // Cases de chiffres : la synthèse du jour (trois cases) et le solde prévisionnel du mois
+  // (quatre). Elles vivent ici, avec le récapitulatif, parce que leurs modificateurs en
+  // dépendent : un modificateur doit suivre sa base dans la feuille, sinon une déclaration
+  // de même spécificité l'emporte et la modifier disparaît sans bruit.
+  .synthese {
+    @apply grid grid-cols-3 gap-2;
+  }
+
+  .synthese__case {
+    @apply flex flex-col gap-0.5 rounded-card border border-line bg-surface px-3 py-2;
+  }
+
+  .synthese__valeur {
+    @include chiffres-tabulaires;
+    @apply text-lg font-medium text-ink;
+  }
+
+  .synthese__libelle {
+    @apply text-xs text-ink-muted;
+  }
+
+  // Solde prévisionnel : deux colonnes sur téléphone, quatre à partir de `md`. Les cases
+  // remplacent l'ancienne ligne de badge grise, qui ne portait qu'un chiffre nu.
+  .synthese--previsionnel {
+    @apply grid-cols-2;
+
+    @include from('md') {
+      @apply grid-cols-4;
+    }
+  }
+
+  // La case qui compte est marquée par sa BORDURE et une valeur plus grande : c'est une mise
+  // en avant, elle ne code aucune donnée (ni aidant, ni statut) — même usage que la bordure
+  // d'aujourd'hui dans la vue semaine.
+  .synthese__case--cle {
+    @apply border-primary-300;
+  }
+
+  .synthese__case--cle .synthese__valeur {
+    @apply text-xl;
+  }
+
+  .synthese__case--depassement .synthese__valeur {
+    color: var(--color-danger-ink);
   }
 }

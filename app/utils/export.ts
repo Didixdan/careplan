@@ -5,6 +5,7 @@ import { longDay, weekLabel } from './date'
 import { durationInMinutes, formatDuration } from './duration'
 import { amountCents, formatCents, formatHoursDecimal } from './money'
 import { STATUS_LABELS } from './status'
+import { tagLine } from './tags'
 
 /**
  * Exports chiffrés : le récapitulatif CESU du mois (par aidant × bénéficiaire) et la semaine
@@ -22,7 +23,7 @@ export const MISSING_RATE = 'À saisir'
 /** Marqueur de la ligne de total d'un aidant, dans la colonne « Bénéficiaire ». */
 export const ASSISTANT_TOTAL_LABEL = 'Total aidant'
 
-/** Marqueur de la ligne de total d'une semaine, dans la colonne « Intitulé ». */
+/** Marqueur de la ligne de total d'une semaine, dans la colonne « Tags ». */
 export const WEEK_TOTAL_LABEL = 'Total semaine (hors annulés)'
 
 /** Cumul d'un aidant chez un bénéficiaire, pour le mois. */
@@ -45,7 +46,8 @@ export interface WeekLine {
   /** Tous les aidants du créneau, principal d'abord : un binôme en a deux, et les deux comptent. */
   assistantNames: string[]
   beneficiaryName: string
-  title: string
+  /** Tous les tags du créneau : la carte n'en montre que trois, l'export les porte tous. */
+  tags: string[]
   status: Status
 }
 
@@ -72,7 +74,7 @@ const WEEK_HEADER: CsvValue[] = [
   'Durée (h:min)',
   'Heures (décimal)',
   'Bénéficiaire',
-  'Intitulé',
+  'Tags',
   'Statut',
 ]
 
@@ -186,7 +188,7 @@ export function weekCsv(dates: CivilDate[], lines: WeekLine[]): string {
       duration === null ? '' : formatDuration(duration),
       duration === null ? '' : formatHoursDecimal(duration),
       line.beneficiaryName,
-      line.title,
+      tagLine(line.tags),
       STATUS_LABELS[line.status],
     ])
   }

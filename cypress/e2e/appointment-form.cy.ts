@@ -21,7 +21,7 @@ describe('Créneau : créer, modifier, supprimer', () => {
     // demande au serveur de valider une plage, on relâche la place, et on la lui redonne.
     cy.referenceLists().then(({ beneficiaries, assistants }) => {
       cy.findFreeSlot({
-        date: DAY, title: 'Sonde plage libre', status: 'planned',
+        date: DAY, tags: ['Sonde plage libre'], status: 'planned',
         beneficiaryId: beneficiaries[0].id, primaryAssistantId: assistants[0].id,
       }, 2).then(({ start, end }) => {
         cy.visit('/')
@@ -32,7 +32,10 @@ describe('Créneau : créer, modifier, supprimer', () => {
         cy.get('#appointment-date').clear().type(DAY)
         cy.get('#appointment-start').clear().type(start)
         cy.get('#appointment-end').clear().type(end)
-        cy.get('#appointment-title').clear().type('Vérif création')
+        // Un tag INCONNU du catalogue : il est créé à l'enregistrement, c'est le parcours
+        // de l'autocomplete. `{enter}` prend le texte tapé faute de suggestion.
+        cy.get('#appointment-tags').type('Vérif création{enter}')
+        cy.get('.tags-field__puce').should('contain', 'Vérif création')
         cy.contains('button', 'Enregistrer').click()
 
         cy.get('[role="dialog"]').should('not.exist')
@@ -42,7 +45,7 @@ describe('Créneau : créer, modifier, supprimer', () => {
 
         cy.request(`/api/appointments?date=${DAY}`).then((response) => {
           const [appointment] = response.body
-          expect(appointment.title).to.equal('Vérif création')
+          expect(appointment.tags.map((tag: { name: string }) => tag.name)).to.deep.equal(['Vérif création'])
           created.push(appointment.id)
         })
       })
@@ -52,7 +55,7 @@ describe('Créneau : créer, modifier, supprimer', () => {
   it('modifie un créneau existant', () => {
     cy.referenceLists().then(({ beneficiaries, assistants }) => {
       cy.createFreeAppointment({
-        date: DAY, title: 'Avant modification',
+        date: DAY, tags: ['Avant modification'],
         status: 'planned', beneficiaryId: beneficiaries[0].id, primaryAssistantId: assistants[0].id,
       }).then(({ id }) => {
         created.push(id)
@@ -60,7 +63,11 @@ describe('Créneau : créer, modifier, supprimer', () => {
         cy.visit(`/week?week=${DAY}`)
         revealCard('Avant modification')
         cy.contains('Avant modification').click()
-        cy.get('#appointment-title').clear().type('Après modification')
+        // Le formulaire s'ouvre avec le tag existant en pastille : on le retire (la pastille est
+        // le bouton de retrait), puis on en saisit un autre.
+        cy.get('[aria-label="Retirer « Avant modification »"]').click()
+        cy.get('.tags-field__puce').should('not.exist')
+        cy.get('#appointment-tags').type('Après modification{enter}')
         cy.contains('button', 'Enregistrer').click()
         cy.get('[role="dialog"]').should('not.exist')
 
@@ -73,7 +80,7 @@ describe('Créneau : créer, modifier, supprimer', () => {
   it('supprime un créneau après confirmation', () => {
     cy.referenceLists().then(({ beneficiaries, assistants }) => {
       cy.createFreeAppointment({
-        date: DAY, title: 'À supprimer',
+        date: DAY, tags: ['À supprimer'],
         status: 'planned', beneficiaryId: beneficiaries[0].id, primaryAssistantId: assistants[0].id,
       }).then(({ id }) => {
         cy.visit(`/week?week=${DAY}`)

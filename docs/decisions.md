@@ -59,8 +59,10 @@ dépôt, migrer vers un autre Postgres se limite à un `pg_dump` / `pg_restore`.
 | utilisateur | `users` (email, hashed_password, role) |
 | aidant | `assistants` (first_name, last_name, color, contracted_minutes) |
 | bénéficiaire | `beneficiaries` (address, hourly_rate_cents, authorized_minutes_month) |
-| créneau | `appointments` (date, start_time, end_time, title, status, beneficiary_id, primary_assistant_id) |
+| créneau | `appointments` (date, start_time, end_time, status, beneficiary_id, primary_assistant_id) |
 | co-aidants | `appointment_assistants` (appointment_id, assistant_id) |
+| tag | `tags` (name, key) — le vocabulaire des actes |
+| tags d'un créneau | `appointment_tags` (appointment_id, tag_id, position) |
 | affectation | `assignments` (assistant_id, beneficiary_id) |
 
 Un créneau a **un** bénéficiaire, **un** aidant principal (dont la couleur colore le
@@ -78,14 +80,15 @@ app/
   components/
     ui/                      UiButton, UiBadge, UiCard, UiModal, UiSkeleton, UiEmptyState,
                              UiErrorPage, UiPersonIcon
-    planning/                PlanningAppointment, PlanningAppointmentForm,
+    planning/                PlanningAppointment, PlanningAppointmentForm, PlanningTagPicker,
                              PlanningTimeGrid, PlanningTimedAppointment, PlanningWeekGrid
     layout/                  LayoutShell
   composables/               theme.ts, planning.ts, loading.ts, drag.ts
   pages/                     index (jour), week, month (récapitulatif), assistants,
-                             beneficiaries, login, styleguide, [...missing]
+                             beneficiaries, tags (vocabulaire), login, styleguide, [...missing]
   utils/                     date.ts, duration.ts, colors.ts, grid.ts, conflicts.ts,
-                             gesture.ts, status.ts, summary.ts, appointments.ts, error.ts
+                             gesture.ts, status.ts, summary.ts, appointments.ts, tags.ts,
+                             error.ts
 shared/types/                contrat du domaine + types de session (auth.d.ts)
 server/
   db/                        schéma Drizzle, fixtures, seed
@@ -93,6 +96,7 @@ server/
   api/appointments/          lecture filtrée par rôle (jour / semaine / mois), listes de
                              référence, récapitulatif, création, déplacement, édition,
                              suppression
+  api/tags/                   catalogue des tags : lecture (aidants + admin), écriture (admin)
   api/auth/                  connexion / déconnexion
 app/middleware/              garde d'authentification (redirection /login)
 app/pages/login.vue          page de connexion
@@ -232,8 +236,13 @@ bénéficiaires), puis les créneaux. **Le seul élément mis en avant est ce qu
 une action** : un créneau « à vérifier » reçoit un fond teinté, les autres se contentent
 de leur badge. Si tout est mis en avant, rien ne l'est.
 
-**Vue semaine** (`app/pages/week.vue`) : grille de sept colonnes. Le modèle de
-défilement est verrouillé par `verify:css` — voir [`pieges.md`](./pieges.md) §13.
+**Vue semaine** (`app/pages/week.vue`) : les sept jours sont empilés en grille — une colonne
+sur téléphone, deux à partir de `md`, trois à partir de `lg` (donc 3/3/1 en desktop, dimanche
+seul en bas). Chaque jour garde son en-tête (nom, numéro, total) et un **cadre borné à quatre
+heures de grille, qui défile pour lui-même** : plus aucun défilement horizontal, la page ne
+défile qu'en vertical. Un jour sans passage affiche une ligne « Aucun passage », jamais un cadre
+vide : une zone bornée sans contenu capterait le geste pour rien. Le modèle de défilement est
+verrouillé par `verify:css` — voir [`pieges.md`](./pieges.md) §13.
 
 **Grille horaire et déplacement** : les deux vues affichent une grille 07h–22h (pas de
 15 min) où chaque créneau est posé à son heure. Un créneau se déplace par
@@ -241,7 +250,8 @@ glisser-déposer (durée conservée), avec :
 - **pas de 15 min** (`roundTo15`) ;
 - **chevauchement interdit par aidant** (principal ou co-aidant) — vérifié côté client
   pour l'aperçu, et côté serveur (`PUT /api/appointments/:id`) comme source de vérité ;
-- **déplacement entre jours** en vue semaine ;
+- **déplacement entre jours** en vue semaine — le dépôt se fait dans la partie VISIBLE du
+  cadre d'un jour : une heure hors du cadre demande de le faire défiler d'abord ;
 - **filtre par aidant** pour l'admin (sélecteur sur les deux vues) ;
 - les créneaux passant minuit sont affichés dans un bloc « Nuit », non déplaçables.
 
@@ -282,6 +292,35 @@ composants auraient divergé dès la première validation ajoutée.
   passer une nuit à cheval sur deux jours.
 - **Plages horaires** : contrôlées une fois, dans `checkTimeRange` (`app/utils/grid.ts`),
   qui renvoie un code testable plutôt qu'un message.
+- **Tags** : un créneau porte **au moins un** tag et au plus dix (`MAX_TAGS`). La règle est
+  pure (`checkTagNames`, `app/utils/tags.ts`), le message vit dans le service, et l'écran
+  désactive « Enregistrer » tant qu'aucun tag n'est choisi — il n'annonce pas une action que
+  le serveur refuserait.
+
+### Tags : le vocabulaire des actes
+
+L'ancien **intitulé libre** a disparu : le même acte s'écrivait « Aide à la toilette »,
+« toilette », « aide toilette »… Le vocabulaire vit désormais dans une table `tags` partagée,
+et le formulaire propose l'existant par **autocomplete** (`PlanningTagPicker`).
+
+Ce que la prose ne peut pas dire — le reste est tenu par `test/tags.spec.ts`, qui verrouille les
+règles de clé, d'ordre et de refus, et par `cypress/e2e/tags.cy.ts` pour l'écran :
+
+- **Pourquoi un référentiel partagé** : un intitulé libre ne se réutilise pas, se réécrit à
+  chaque saisie, et finit en variantes que rien ne rapproche. La table, elle, se dédoublonne par
+  une **clé** : « Courses » et « courses » sont le même tag. Les accents ne sont **pas** repliés —
+  l'extension `unaccent` n'est pas garantie sur Neon, et une seconde règle approximative créerait
+  des doublons silencieux ; la règle est donc écrite une fois en JS et une fois dans la migration
+  qui a converti les anciens intitulés.
+- **Deux chemins d'écriture, deux comportements voulus** : le formulaire d'un créneau
+  **réutilise** le tag existant et crée le manquant (sinon un aidant serait bloqué par un
+  vocabulaire incomplet) ; l'écran de gestion **refuse** un doublon en 409 (une saisie
+  volontairement dupliquée est une erreur qu'il vaut mieux voir).
+- **Trois tags sur une carte, tous dans les exports** : une carte de grille est proportionnelle
+  à sa durée, donc courte ; la limite est un choix d'écran, jamais une perte de donnée. La
+  carte de liste, qui vit dans le flux, les montre tous.
+- **Le titre d'une carte est le BÉNÉFICIAIRE** : plus d'intitulé à afficher, et c'est lui qu'on
+  cherche des yeux dans une journée. L'aidant garde sa ligne, colorée par le rail.
 
 Droits, dans une seule fonction (`useCanEditAppointments`, côté écran ; `assertMayEdit`,
 côté serveur) : l'admin écrit tout ; l'aidant écrit ses créneaux (principal ou co-aidant),
@@ -292,7 +331,8 @@ d'envoyer est pire qu'un formulaire absent.
 
 Les listes de référence du formulaire passent par `GET /api/appointments/options`, qui ne
 transporte qu'un identifiant et un nom : `/api/beneficiaries` reste réservée à l'admin, car
-elle expose l'adresse, le taux horaire et le volume d'heures autorisé.
+elle expose l'adresse, le taux horaire et le volume d'heures autorisé. Le **catalogue des
+tags** y voyage en entier : l'autocomplete filtre côté client, donc aucune requête par frappe.
 
 **États de chargement** : les vues passent par `useLoading`, qui expose
 `data`, `error`, `isLoading` et `refresh`. Une panne de lecture affiche un
@@ -391,6 +431,26 @@ ratio y est donc exact, et l'écran affiche une barre, le restant, ou le **dépa
 chiffré en ton danger. Le contrat d'un aidant est **hebdomadaire** : il est affiché en
 contexte, sans ratio — le convertir en mois demanderait un facteur, donc une politique.
 
+**Solde prévisionnel du mois** : l'écran répond à « que reste-t-il à faire, et combien cela
+coûtera-t-il ? », en quatre cases — prévu, heures prévisionnelles, montant prévisionnel, solde
+(`forecastByBeneficiary` et `forecastSummary`, dans `app/utils/summary.ts`, verrouillés par
+`test/summary.spec.ts`). Les trois règles qui ne se lisent pas dans le code :
+
+- **Le solde se calcule APRÈS prévisionnel**, jamais sur le seul réalisé : le « Reste » d'une
+  carte de bénéficiaire ne parle que de la déclaration. Les deux lignes se complètent, elles ne
+  se répètent pas — c'est la distinction que l'écran doit rendre visible.
+- **Un total partiel n'est jamais présenté comme complet** : un taux manquant rend le montant du
+  mois « À saisir », et les bénéficiaires sans volume autorisé sont comptés à part plutôt que lus
+  comme un zéro (même famille de règle que le CSV CESU).
+- **Un agrégat positif peut cacher un dépassement** : le nombre de bénéficiaires en dépassement
+  est donc affiché à côté du solde, sinon un total rassurant éteindrait l'alerte.
+
+**Le taux horaire n'est exposé qu'à l'admin** (`showRates` dans `summariseMonth`) : c'est lui
+qui paie. Un lecteur (bénéficiaire ou famille) ne reçoit pas le coût employeur, et un aidant
+reçoit ses montants par son export CESU. Le champ est alors **absent** du DTO (et non `null`,
+qui veut dire « pas encore saisi ») : l'écran n'écrit donc jamais « À saisir » là où il n'a
+pas le droit de montrer un montant.
+
 ### Exports
 
 Trois documents, produits depuis l'écran où la période est **déjà choisie** — jamais depuis un
@@ -399,7 +459,7 @@ Trois documents, produits depuis l'écran où la période est **déjà choisie**
 | Document | Depuis | Contenu | Qui |
 | --- | --- | --- | --- |
 | **CSV CESU du mois** | `/month` | une ligne par (aidant × bénéficiaire) — heures, taux, montant — puis le total de l'aidant | admin (tout), aidant (ses lignes) |
-| **CSV de la semaine** | `/week` | tous les passages avec leur statut, puis le total d'heures par aidant (hors annulés), sans montant | admin, aidant (les siens) |
+| **CSV de la semaine** | `/week` | tous les passages avec leur statut **et leurs tags** (colonne « Tags », tous les tags joints par « , »), puis le total d'heures par aidant (hors annulés), sans montant | admin, aidant (les siens) |
 | **Message aux familles** | `/week` | texte prêt à coller, **un par bénéficiaire**, avec bouton « Copier » | admin |
 
 **Un seul jeu de règles, pur et testé au caractère près** : `app/utils/export.ts` construit les
@@ -421,18 +481,19 @@ finirait sur une déclaration.
 forme que demande le CESU). Deviner laquelle convient serait un pari.
 
 **Le message aux familles** ne liste que les passages **non annulés** de la semaine affichée,
-dans l'ordre du calendrier, avec le prénom de l'aidant et l'intitulé du passage ; un passage qui
-franchit minuit est signalé « (lendemain) », sinon il ressemble à une faute de saisie. Une
-semaine sans passage ne produit **aucun** message : un message vide ne s'envoie pas. Il se
-calcule sur TOUS les créneaux de la semaine, jamais sur la liste filtrée par aidant — sinon le
-filtre de l'admin amputerait le message envoyé à une famille des passages d'un autre aidant.
+dans l'ordre du calendrier, avec le prénom de l'aidant et les **tags** du passage (à la place
+de l'ancien intitulé, même place et même séparateur « , » que le CSV) ; un passage qui franchit
+minuit est signalé « (lendemain) », sinon il ressemble à une faute de saisie. Une semaine sans
+passage ne produit **aucun** message : un message vide ne s'envoie pas. Il se calcule sur TOUS
+les créneaux de la semaine, jamais sur la liste filtrée par aidant — sinon le filtre de l'admin
+amputerait le message envoyé à une famille des passages d'un autre aidant.
 
 **Droits** : un lecteur ne produit aucun export (403) — la famille reçoit le message, elle ne
 génère ni un fichier de paie ni un relevé d'heures. Un aidant exporte ses propres heures et son
 propre montant ; il voit donc les taux des bénéficiaires chez qui il est intervenu, puisque ce
 sont eux qui composent son montant.
 
-**Quatre hypothèses assumées**, chacune valant une ligne de code à changer le jour où elles
+**Cinq hypothèses assumées**, chacune valant une ligne de code à changer le jour où elles
 seront démenties :
 
 | Hypothèse | Conséquence | À revoir si |
@@ -441,6 +502,7 @@ seront démenties :
 | **Un binôme coûte deux fois** | chaque aidant est payé de ses heures, donc l'employeur paie deux fois la même plage | la réalité est un partage, ou un seul aidant payé |
 | **Le ton du message aux familles** (« Bonjour, », 🗓️, ⏱️, prénom seul) | le texte est un choix de rédaction | il sonne trop familier ou trop sec : les constantes sont dans `app/utils/message.ts` |
 | **Un aidant voit les taux** des bénéficiaires chez qui il intervient | son export montre les taux qui composent son montant | ces taux doivent rester confidentiels : ils passeront à `null` dans sa ligne |
+| **Le taux n'est montré qu'à l'admin** dans le récapitulatif | l'écran d'un lecteur ou d'un aidant n'affiche que des heures, jamais un montant | la famille doit connaître le coût, ou un aidant veut son récapitulatif chiffré sans passer par l'export |
 
 ### Dates et heures : jamais d'objet `Date` exposé
 

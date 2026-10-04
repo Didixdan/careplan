@@ -28,6 +28,7 @@ const managementNavItems = computed<NavItem[]>(() =>
     ? [
         { label: 'Aidants', to: '/assistants', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' },
         { label: 'Bénéficiaires', to: '/beneficiaries', icon: 'M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z' },
+        { label: 'Tags', to: '/tags', icon: 'M7 7h.01M7 3h5a2 2 0 011.414.586l7 7a2 2 0 010 2.828l-6.586 6.586a2 2 0 01-2.828 0l-7-7A2 2 0 013 11.586V7a4 4 0 014-4z' },
       ]
     : [],
 )

@@ -136,7 +136,17 @@
 
 // Thème sombre : ce n'est PAS un inversé. Seuls les fonds de badge sont redéfinis (voir
 // components/_badge.scss) ; les surfaces sombres dérivent de la teinte 250.
+//
+// `--color-danger-ink` est l'encre d'ALERTE (un texte de dépassement), définie par mode :
+// `--color-danger` reste le rouge de REMPLISSAGE (`.btn--danger`, barre de dépassement), et
+// l'inverser pour le thème sombre rendrait le bouton plein illisible. Une déclaration en
+// `@layer base` et non dans `@theme` : Tailwind élague les variables de thème qu'il croit
+// inutilisées (docs/pieges.md §8), et celle-ci n'est jamais écrite dans un template.
 @layer base {
+  :root {
+    --color-danger-ink: var(--color-danger-700);
+  }
+
   .dark {
     --color-canvas: oklch(19% 0.008 250);
     --color-surface: oklch(23.5% 0.01 250);
@@ -146,6 +156,7 @@
     --color-ink: oklch(95.5% 0.004 250);
     --color-ink-soft: oklch(87% 0.006 250);
     --color-ink-muted: oklch(71% 0.009 250);
+    --color-danger-ink: var(--color-danger-300);
   }
 }
 
@@ -166,5 +177,6 @@
 @import 'components/planning';
 @import 'components/recap';
 @import 'components/semaine';
+@import 'components/tags';
 
 @import 'layouts/app-shell';

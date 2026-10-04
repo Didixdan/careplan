@@ -41,15 +41,17 @@ const isAdmin = computed(() => user.value?.role === 'admin')
 // rien (`app/composables/planning.ts`).
 const canEdit = useCanEditAppointments()
 
-const { data: options } = useLoading<AppointmentFormOptions>(
+const { data: options, refresh: refreshOptions } = useLoading<AppointmentFormOptions>(
   'appointment-options',
   () => canEdit.value
     ? api<AppointmentFormOptions>('/api/appointments/options')
-    : Promise.resolve({ beneficiaries: [], assistants: [] }),
+    : Promise.resolve({ beneficiaries: [], assistants: [], tags: [] }),
   [canEdit],
 )
 const beneficiaries = computed(() => options.value?.beneficiaries ?? [])
 const assistants = computed(() => options.value?.assistants ?? [])
+/** Catalogue des tags du formulaire : chargé avec les deux autres listes, sous la même clé. */
+const catalogue = computed(() => options.value?.tags ?? [])
 const selectedAssistant = ref('')
 const isCreating = ref(false)
 
@@ -85,6 +87,9 @@ const dayAssistants = computed(() => {
 function onSaved(date: string) {
   isCreating.value = false
   selectedAppointment.value = null
+  // Un tag inconnu vient peut-être d'être créé : le catalogue est relu pour qu'il soit
+  // proposé à la prochaine saisie, sans recharger la page.
+  refreshOptions()
   if (currentDate.value === date) refresh()
   else currentDate.value = date
 }
@@ -422,8 +427,8 @@ function nextDay() {
               :key="appointment.id"
               :start="appointment.start"
               :end="appointment.end"
-              :title="appointment.title"
               :beneficiary="appointment.beneficiary"
+              :tags="appointment.tags"
               :primary-assistant="appointment.primaryAssistant"
               :color="appointment.color"
               :co-assistants="appointment.coAssistants"
@@ -452,6 +457,7 @@ function nextDay() {
         :default-date="currentDate"
         :beneficiaries="beneficiaries"
         :assistants="assistants"
+        :catalogue="catalogue"
         @saved="onSaved"
         @cancel="closeModal"
       />
@@ -466,6 +472,7 @@ function nextDay() {
         :appointment="selectedAppointment"
         :beneficiaries="beneficiaries"
         :assistants="assistants"
+        :catalogue="catalogue"
         @saved="onSaved"
         @deleted="onDeleted"
         @cancel="closeModal"

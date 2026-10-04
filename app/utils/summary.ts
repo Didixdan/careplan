@@ -1,7 +1,8 @@
-import type { Appointment, DaySummary, PersonSummary, SummaryTotals } from '~~/shared/types/planning'
+import type { Appointment, DaySummary, PersonSummary, SummaryLine, SummaryTotals } from '~~/shared/types/planning'
 import type { AssistantColor } from './colors'
 import type { CivilDate } from './date'
 import { durationInMinutes } from './duration'
+import { amountCents } from './money'
 
 /**
  * Ce qui compte comme temps RÉALISÉ, donc à DÉCLARER : un passage terminé, et rien d'autre.
@@ -175,4 +176,101 @@ export function remainingMinutes(line: Referenced): number | null {
 export function exceedsReference(line: Referenced): boolean {
   const remaining = remainingMinutes(line)
   return remaining !== null && remaining < 0
+}
+
+/**
+ * Heures prévisionnelles d'un cumul : **tout ce qui n'est pas annulé**.
+ *
+ * C'est la question du mois à venir — combien d'heures seront travaillées, et donc payées. Le
+ * réalisé en fait partie (il est déjà fait, mais il appartient au mois), `to_validate` aussi,
+ * et le prévu également. `cancelled`, lui, n'entre dans aucun cumul (`addAppointment`).
+ */
+export function forecastMinutes(
+  totals: Pick<SummaryTotals, 'declaredMinutes' | 'toValidateMinutes' | 'plannedMinutes'>,
+): number {
+  return totals.declaredMinutes + totals.toValidateMinutes + totals.plannedMinutes
+}
+
+/** Solde prévisionnel d'un bénéficiaire : ce qu'il reste à faire, et ce que ça coûte. */
+export interface ForecastLine {
+  id: string
+  name: string
+  /** Heures prévisionnelles : réalisé + à vérifier + prévu, annulés exclus. */
+  forecastMinutes: number
+  /**
+   * Montant prévisionnel au taux du bénéficiaire, en centimes. `null` quand le taux n'est pas
+   * saisi, ou quand il n'est pas communiqué à ce rôle : on n'invente pas un prix.
+   */
+  amountCents: number | null
+  /**
+   * Volume autorisé − heures prévisionnelles. `null` sans volume saisi (un volume absent n'est
+   * pas un zéro : tout paraîtrait en dépassement). Négatif = dépassement.
+   */
+  balanceMinutes: number | null
+}
+
+/**
+ * Solde prévisionnel, bénéficiaire par bénéficiaire. L'ordre d'entrée est conservé : c'est
+ * celui du récapitulatif, déjà trié par nom.
+ */
+export function forecastByBeneficiary(lines: SummaryLine[]): ForecastLine[] {
+  return lines.map((line) => {
+    const minutes = forecastMinutes(line)
+
+    return {
+      id: line.id,
+      name: line.name,
+      forecastMinutes: minutes,
+      // `undefined` (taux non communiqué) et `null` (taux non saisi) donnent le même résultat
+      // ici ; c'est l'écran qui les distingue, pour ne pas écrire « À saisir » à tort.
+      amountCents: line.hourlyRateCents === undefined
+        ? null
+        : amountCents(minutes, line.hourlyRateCents),
+      balanceMinutes: line.referenceMinutes === null ? null : line.referenceMinutes - minutes,
+    }
+  })
+}
+
+/** Ce que le mois entier prévoit : heures, montant, et ce qu'il reste à planifier. */
+export interface ForecastSummary {
+  forecastMinutes: number
+  /**
+   * Montant prévisionnel du mois. `null` dès qu'un taux manque : un total partiel présenté
+   * comme complet finirait sur un virement (même règle que le CSV CESU).
+   */
+  amountCents: number | null
+  /** Bénéficiaires dont le taux manque — explique un montant absent, sans le justifier. */
+  missingRateCount: number
+  /**
+   * Somme des soldes des bénéficiaires QUI ONT un volume ; `null` si aucun n'en a. Le solde
+   * ne couvre donc jamais un bénéficiaire sans volume : `withoutVolumeCount` le dit.
+   */
+  balanceMinutes: number | null
+  /** Bénéficiaires sans volume autorisé saisi : le solde ne les couvre pas. */
+  withoutVolumeCount: number
+  /** Bénéficiaires dont le prévisionnel dépasse le volume autorisé. */
+  exceededCount: number
+}
+
+/** Agrège les lignes de solde du mois. */
+export function forecastSummary(lines: ForecastLine[]): ForecastSummary {
+  const forecastTotal = lines.reduce((total, line) => total + line.forecastMinutes, 0)
+
+  const missingRateCount = lines.filter(line => line.amountCents === null).length
+  const amountTotal = missingRateCount === 0
+    ? lines.reduce((total, line) => total + (line.amountCents ?? 0), 0)
+    : null
+
+  const balanced = lines.filter(line => line.balanceMinutes !== null)
+
+  return {
+    forecastMinutes: forecastTotal,
+    amountCents: amountTotal,
+    missingRateCount,
+    balanceMinutes: balanced.length > 0
+      ? balanced.reduce((total, line) => total + (line.balanceMinutes ?? 0), 0)
+      : null,
+    withoutVolumeCount: lines.length - balanced.length,
+    exceededCount: balanced.filter(line => (line.balanceMinutes ?? 0) < 0).length,
+  }
 }

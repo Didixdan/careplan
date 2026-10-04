@@ -23,7 +23,7 @@ describe('API : permissions et statuts', () => {
       method: 'POST',
       url: '/api/appointments',
       failOnStatusCode: false,
-      body: { date: freeDate(), start: '09:00', end: '10:00', title: 'Interdit', status: 'planned', beneficiaryId: 'x', primaryAssistantId: 'y' },
+      body: { date: freeDate(), start: '09:00', end: '10:00', tags: ['Interdit'], status: 'planned', beneficiaryId: 'x', primaryAssistantId: 'y' },
     }).its('status').should('equal', 403)
 
     cy.request({ url: `/api/exports/cesu?month=${freeDate().slice(0, 7)}`, failOnStatusCode: false })
@@ -51,7 +51,7 @@ describe('API : permissions et statuts', () => {
 
     cy.referenceLists().then(({ beneficiaries, assistants }) => {
       cy.createFreeAppointment({
-        date: today(), title: 'Vérif API statut',
+        date: today(), tags: ['Vérif API statut'],
         status: 'planned', beneficiaryId: beneficiaries[0].id, primaryAssistantId: assistants[0].id,
       }).then(({ id, start, end }) => {
         created.push(id)
@@ -73,7 +73,7 @@ describe('API : permissions et statuts', () => {
           method: 'PATCH',
           url: `/api/appointments/${id}`,
           body: {
-            date: today(), start, end, title: 'Vérif API statut',
+            date: today(), start, end, tags: ['Vérif API statut'],
             status: 'planned', beneficiaryId: beneficiaries[0].id, primaryAssistantId: assistants[0].id,
           },
         }).its('status').should('equal', 200)
@@ -98,7 +98,7 @@ describe('API : les exports', () => {
       cy.referenceLists().then(({ assistants }) => {
         // Deux heures : la durée est ce que vérifie l'export, pas l'heure de la journée.
         cy.createFreeAppointment({
-          date: `${MONTH}-05`, title: 'Vérif export',
+          date: `${MONTH}-05`, tags: ['Vérif export'],
           status: 'completed', beneficiaryId: target.id, primaryAssistantId: assistants[0].id,
         }, 2).then(({ id }) => {
           created.push(id)
@@ -133,7 +133,7 @@ describe('API : les exports', () => {
 
     cy.referenceLists().then(({ beneficiaries, assistants }) => {
       cy.createFreeAppointment({
-        date: week, title: 'Vérif semaine ; export',
+        date: week, tags: ['Vérif semaine ; export', 'Vérif second tag'],
         status: 'planned', beneficiaryId: beneficiaries[0].id, primaryAssistantId: assistants[0].id,
       }, 1.5).then(({ id }) => {
         created.push(id)
@@ -142,10 +142,13 @@ describe('API : les exports', () => {
           const csv = response.body as unknown as string
 
           expect(csv).to.contain('Semaine;Aidant(s);Date;Jour')
+          // La colonne des tags remplace l'ancien intitulé, à la même place.
+          expect(csv).to.contain(';Bénéficiaire;Tags;Statut')
           expect(csv).to.contain('1 h 30;1,50')
           expect(csv).to.contain('Planifié')
-          // Un intitulé qui contient un point-virgule est mis entre guillemets.
-          expect(csv).to.contain('"Vérif semaine ; export"')
+          // TOUS les tags du créneau, joints, et mis entre guillemets dès que l'un contient
+          // un point-virgule.
+          expect(csv).to.contain('"Vérif semaine ; export, Vérif second tag"')
           expect(csv).to.contain('Total semaine (hors annulés)')
         })
       })

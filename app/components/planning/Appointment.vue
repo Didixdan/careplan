@@ -1,18 +1,22 @@
 <script setup lang="ts">
-import type { Status } from '~~/shared/types/planning'
+import type { Status, TagOption } from '~~/shared/types/planning'
 
 /**
  * Heures en colonne de largeur fixe (l'œil descend la colonne), durée en barre
  * proportionnelle — mais toujours écrite à côté : la longueur ne porte jamais seule
  * l'information. La couleur de l'aidant principal est un rail pleine hauteur, pas un
  * fond teinté.
+ *
+ * Le titre est le BÉNÉFICIAIRE ; les tags disent l'acte. Cette carte vit dans le flux (bloc
+ * « Nuit », liste), donc elle s'allonge : elle montre TOUS les tags, sans « +N ».
  */
 const props = withDefaults(
   defineProps<{
     start: string
     end: string
-    title: string
     beneficiary: string
+    /** Tags du créneau, dans l'ordre : tous affichés sur cette carte. */
+    tags?: TagOption[]
     /** Aidant principal : affiché et porteur de la couleur du rail. */
     primaryAssistant: string
     color: AssistantColor
@@ -24,6 +28,7 @@ const props = withDefaults(
     statusPending?: boolean
   }>(),
   {
+    tags: () => [],
     coAssistants: () => [],
     status: 'planned',
     // 4 h : au-delà la barre sature. C'est une échelle de lecture, pas une mesure.
@@ -80,31 +85,35 @@ const colorStyle = computed(() => ({
     <div class="creneau__contenu">
       <div class="creneau__entete">
         <p class="creneau__titre">
-          {{ props.title }}
+          {{ props.beneficiary }}
         </p>
         <UiBadge :tone="STATUS_TONES[props.status]">
           {{ STATUS_LABELS[props.status] }}
         </UiBadge>
       </div>
 
+      <p
+        v-if="props.tags.length > 0"
+        class="creneau__tags"
+      >
+        <span
+          v-for="tag in props.tags"
+          :key="tag.id"
+          class="tag-chip"
+        >{{ tag.name }}</span>
+      </p>
+
       <p class="creneau__meta">
-        <span class="truncate">
-          <UiPersonIcon
-            kind="beneficiary"
-            class="mr-1"
-          />{{ props.beneficiary }}
-        </span>
-        <span class="mx-1 shrink-0">·</span>
         <span class="truncate">
           <UiPersonIcon
             kind="assistant"
             class="mr-1"
           />{{ props.primaryAssistant }}
         </span>
-        <span
-          v-if="props.coAssistants.length > 0"
-          class="truncate"
-        >· avec {{ props.coAssistants.join(', ') }}</span>
+        <template v-if="props.coAssistants.length > 0">
+          <span class="mx-1 shrink-0">·</span>
+          <span class="truncate">avec {{ props.coAssistants.join(', ') }}</span>
+        </template>
       </p>
 
       <div class="duree">

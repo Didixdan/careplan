@@ -2,6 +2,7 @@ import type { Appointment } from '~~/shared/types/planning'
 import type { CivilDate } from './date'
 import { longDate } from './date'
 import { durationInMinutes, formatDuration } from './duration'
+import { tagLine } from './tags'
 
 /**
  * Message hebdomadaire d'un bénéficiaire, prêt à coller dans un SMS, un mail ou une
@@ -14,11 +15,17 @@ import { durationInMinutes, formatDuration } from './duration'
  */
 const GREETING = 'Bonjour,'
 
-/** Une ligne par passage, prête à envoyer. */
+/**
+ * Une ligne par passage, prête à envoyer.
+ *
+ * Les tags remplacent l'ancien intitulé, à la même place : c'est ce qui dit à la famille ce
+ * qu'on vient faire. Le séparateur interne est celui de `tagLine` (« , »), pour ne pas se
+ * confondre avec le « · » qui sépare les champs.
+ */
 function passageLine(appointment: Appointment): string {
   const nextDay = appointment.end <= appointment.start ? ' (lendemain)' : ''
   return `• ${longDate(appointment.date)} · ${appointment.start} – ${appointment.end}${nextDay}`
-    + ` · ${appointment.title} (${firstName(appointment.primaryAssistant)})`
+    + ` · ${tagLine(appointment.tags.map(tag => tag.name))} (${firstName(appointment.primaryAssistant)})`
 }
 
 /** Prénom seul : la famille connaît son aidant, et le message se lit plus vite. */

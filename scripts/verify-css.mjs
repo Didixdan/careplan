@@ -55,12 +55,21 @@ const REQUIRED_CLASSES = [
   'semaine__grille',
   'semaine__colonne',
   'semaine__bloc',
+  'semaine__corps',
+  'semaine__vide',
   'creneau',
   'creneau__temps',
   'creneau__heure',
   'duree__piste',
   'duree__remplissage',
 ]
+
+/**
+ * Borne du cadre d'un jour de la vue semaine : quatre heures de grille (1 h = 96 px,
+ * `PX_PER_MINUTE` = 1,6). Alignée sur une heure entière, sinon une ligne horaire serait coupée
+ * en deux.
+ */
+const DAY_BOX_MAX_HEIGHT = '24rem'
 
 /**
  * PRÉFIXES de familles dont les modificateurs sont composés à l'exécution.
@@ -117,6 +126,20 @@ const CONTRAST_PAIRS = [
     name: 'ink-muted sur canvas',
     light: ['--color-ink-muted', '--color-canvas'],
     dark: ['--color-ink-muted', '--color-canvas'],
+  },
+  // L'encre d'ALERTE est définie par mode : `--color-danger` (rouge de remplissage) reste
+  // illisible en texte sur une surface sombre, d'où un jeton distinct et ce contrôle.
+  {
+    name: 'danger-ink sur surface',
+    light: ['--color-danger-ink', '--color-surface'],
+    dark: ['--color-danger-ink', '--color-surface'],
+  },
+  // Pastilles de tags (cartes et sélecteur) : encre douce sur fond atténué. C'est du texte de
+  // 0,65–0,7 rem, donc le seuil de 4,5:1 s'applique pour de bon.
+  {
+    name: 'ink-soft sur surface-muted',
+    light: ['--color-ink-soft', '--color-surface-muted'],
+    dark: ['--color-ink-soft', '--color-surface-muted'],
   },
 ]
 
@@ -410,9 +433,17 @@ function checkVariablesAndClasses(bundle) {
 }
 
 /**
- * Verrouille le modèle de défilement de la vue semaine : sur mobile, défilement horizontal
- * seulement et aucune hauteur bornée — une zone de défilement verticale sans rien à faire
- * défiler capterait le geste du doigt (docs/pieges.md §13).
+ * Verrouille le modèle de défilement de la vue semaine (`docs/pieges.md` §13).
+ *
+ * Les jours sont empilés en grille : plus AUCUN défilement horizontal, et le défilement d'un
+ * jour vit dans `.semaine__corps`. Trois propriétés y sont verrouillées, chacune corrigeant une
+ * panne silencieuse :
+ *
+ * - `max-height` : sans borne, la page ferait 10 000 px ;
+ * - `min-height: 0` : dans une colonne flex, sans lui l'enfant refuse de rétrécir et la borne
+ *   est ignorée ;
+ * - `overscroll-behavior` : mis à `contain`, il ARRÊTE le geste au bout du jour au lieu de le
+ *   laisser continuer vers le jour suivant (il ne le redirige jamais).
  */
 /**
  * Lit une déclaration sur toutes les règles portant un sélecteur. Nécessaire car Tailwind
@@ -438,45 +469,79 @@ function axesOverflow(declarations) {
   return { x: declarations.get('overflow-x') ?? '', y: declarations.get('overflow-y') ?? '' }
 }
 
-function checkWeekScrolling(bundle) {
+function checkWeekLayout(bundle) {
   try {
     const rules = extractRules(bundle)
-    const declarations = declarationsForSelector(rules, '.semaine__grille')
 
-    if (declarations.size === 0) {
+    const grid = declarationsForSelector(rules, '.semaine__grille')
+    if (grid.size === 0) {
       fail('« .semaine__grille » introuvable dans le CSS — la vue semaine a disparu')
       return
     }
 
-    const axes = axesOverflow(declarations)
-    const maxHeight = declarations.get('max-height')
-
-    if (!axes.x.includes('auto')) {
-      fail(`.semaine__grille : défilement horizontal attendu, trouvé « ${axes.x || 'absent'} » — le passage d'un jour à l'autre ne fonctionnerait plus`)
+    if (grid.get('display') !== 'grid') {
+      fail(`.semaine__grille : « display: grid » attendu, trouvé « ${grid.get('display') || 'absent'} » — les jours ne seraient plus disposés en blocs`)
     }
     else {
-      ok('.semaine__grille défile horizontalement (un jour par écran)')
+      ok('.semaine__grille dispose les jours en grille')
     }
 
-    if (axes.y.includes('auto')) {
-      fail('.semaine__grille : défilement vertical « auto » sur mobile — la zone capterait le geste sans rien à faire défiler')
+    const axes = axesOverflow(grid)
+    if (axes.x.includes('auto') || axes.x.includes('scroll')) {
+      fail(`.semaine__grille : défilement horizontal « ${axes.x} » — la vue semaine ne défile plus en horizontal, le défilement d'un jour vit dans .semaine__corps`)
     }
     else {
-      ok('.semaine__grille : aucun défilement vertical parasite sur mobile')
+      ok('.semaine__grille : aucun défilement horizontal')
     }
 
-    if (maxHeight) {
-      fail(`.semaine__grille : max-height « ${maxHeight} » sur mobile — borne la grille et recrée le défilement vertical inutile`)
+    if (grid.get('scroll-snap-type')?.includes('x')) {
+      fail('.semaine__grille : accroche horizontale « snap-x » de retour — elle n\'a plus de zone de défilement à aimanter')
     }
     else {
-      ok('.semaine__grille : hauteur non bornée sur mobile')
+      ok('.semaine__grille : aucune accroche horizontale')
     }
 
-    if (!declarations.get('scroll-snap-type')?.includes('x')) {
-      fail('.semaine__grille : scroll-snap-type horizontal absent — les jours ne s\'aligneraient plus un par un')
+    if (grid.get('max-height')) {
+      fail(`.semaine__grille : max-height « ${grid.get('max-height')} » — la borne appartient au cadre d'un jour (.semaine__corps)`)
     }
     else {
-      ok('.semaine__grille : accroche horizontale présente')
+      ok('.semaine__grille : aucune hauteur bornée')
+    }
+
+    const corps = declarationsForSelector(rules, '.semaine__corps')
+    if (corps.size === 0) {
+      fail('« .semaine__corps » introuvable dans le CSS — le cadre défilant d\'un jour a disparu')
+      return
+    }
+
+    const corpsAxes = axesOverflow(corps)
+    if (!corpsAxes.y.includes('auto')) {
+      fail(`.semaine__corps : défilement vertical attendu, trouvé « ${corpsAxes.y || 'absent'} » — un jour ne montrerait que ses premières heures`)
+    }
+    else {
+      ok('.semaine__corps défile verticalement')
+    }
+
+    if (corps.get('max-height') !== DAY_BOX_MAX_HEIGHT) {
+      fail(`.semaine__corps : max-height « ${corps.get('max-height') || 'absent'} » au lieu de « ${DAY_BOX_MAX_HEIGHT} » — la borne vaut quatre heures de grille, sans elle la page devient interminable`)
+    }
+    else {
+      ok(`.semaine__corps borné à ${DAY_BOX_MAX_HEIGHT} (quatre heures de grille)`)
+    }
+
+    if (corps.get('min-height') !== '0') {
+      fail(`.semaine__corps : min-height « ${corps.get('min-height') || 'absent'} » au lieu de « 0 » — dans une colonne flex, sans lui la borne est ignorée (docs/pieges.md §13)`)
+    }
+    else {
+      ok('.semaine__corps : min-height 0, la colonne flex accepte de rétrécir')
+    }
+
+    const overscroll = corps.get('overscroll-behavior')
+    if (overscroll !== undefined && overscroll !== 'auto') {
+      fail(`.semaine__corps : overscroll-behavior « ${overscroll} » — le geste s'arrêterait au bout du jour au lieu de continuer vers le jour suivant`)
+    }
+    else {
+      ok('.semaine__corps : le geste se chaîne à la page')
     }
   }
   catch (error) {
@@ -621,7 +686,7 @@ function main() {
   checkScan(bundle)
   checkFonts(bundle)
   checkShadows(bundle)
-  checkWeekScrolling(bundle)
+  checkWeekLayout(bundle)
   checkVariablesAndClasses(bundle)
   checkDeadClasses()
   checkContrasts(bundle)

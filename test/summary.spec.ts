@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import type { Appointment, Status } from '~~/shared/types/planning'
+import type { Appointment, Status, SummaryLine } from '~~/shared/types/planning'
 import { durationInMinutes } from '~/utils/duration'
 import {
   DECLARED_STATUSES,
   exceedsReference,
+  forecastByBeneficiary,
+  forecastMinutes,
+  forecastSummary,
   remainingMinutes,
   summarise,
   summariseByAssistant,
@@ -40,7 +43,7 @@ function appointment(options: Options = {}): Appointment {
     date: options.date ?? '2026-10-02',
     start: options.start ?? '09:00',
     end: options.end ?? '10:00',
-    title: 'Passage',
+    tags: [{ id: 'tag-courses', name: 'Courses' }],
     status: options.status ?? 'completed',
     beneficiary: options.beneficiary ?? 'Élise Dupont',
     beneficiaryId: options.beneficiaryId ?? 'benef-1',
@@ -49,6 +52,25 @@ function appointment(options: Options = {}): Appointment {
     color: options.color ?? 'assistant-5',
     coAssistants: options.coAssistants ?? [],
     coAssistantIds: options.coAssistantIds ?? [],
+  }
+}
+
+/**
+ * Une ligne du récapitulatif de bénéficiaire, à zéro : chaque test ne remplit que ce qu'il
+ * interroge. `referenceMinutes` est `null` par défaut — « aucun volume saisi » est le cas
+ * qu'on oublie de traiter, donc celui qui doit être le plus facile à écrire.
+ */
+function beneficiaryLine(overrides: Partial<SummaryLine> = {}): SummaryLine {
+  return {
+    id: 'benef-1',
+    name: 'Élise Dupont',
+    declaredMinutes: 0,
+    toValidateMinutes: 0,
+    plannedMinutes: 0,
+    passages: 0,
+    toValidatePassages: 0,
+    referenceMinutes: null,
+    ...overrides,
   }
 }
 
@@ -260,5 +282,127 @@ describe('remainingMinutes et exceedsReference', () => {
     expect(remainingMinutes({ declaredMinutes: 240, referenceMinutes: 0 })).toBe(-240)
     expect(remainingMinutes({ declaredMinutes: 240, referenceMinutes: null })).toBeNull()
     expect(exceedsReference({ declaredMinutes: 240, referenceMinutes: null })).toBe(false)
+  })
+})
+
+/**
+ * Solde prévisionnel du mois : combien d'heures restent à planifier, et ce que le mois coûtera.
+ *
+ * Deux règles s'y croisent, et une erreur sur l'une des deux se voit sur un virement : un
+ * montant se calcule au taux DU bénéficiaire concerné, et un taux manquant rend le total
+ * « À saisir » plutôt que faux.
+ */
+describe('forecastMinutes', () => {
+  it('additionne réalisé, à vérifier et prévu', () => {
+    expect(forecastMinutes({ declaredMinutes: 120, toValidateMinutes: 30, plannedMinutes: 180 })).toBe(330)
+  })
+
+  it('ignore ce qui est annulé, qui n\'entre dans aucun cumul', () => {
+    // Un créneau annulé sort en amont (`addAppointment`) : il ne compte nulle part.
+    const totals = summarise([appointment({ status: 'cancelled' })])
+    expect(forecastMinutes(totals)).toBe(0)
+  })
+})
+
+describe('forecastByBeneficiary', () => {
+  it('calcule le montant au taux DU bénéficiaire', () => {
+    const [line] = forecastByBeneficiary([
+      beneficiaryLine({ declaredMinutes: 120, hourlyRateCents: 1650 }),
+    ])
+
+    // 2 h à 16,50 € = 33,00 €.
+    expect(line?.amountCents).toBe(3300)
+    expect(line?.forecastMinutes).toBe(120)
+  })
+
+  it('n\'invente pas un prix sans taux saisi', () => {
+    const [saisi, communique] = forecastByBeneficiary([
+      beneficiaryLine({ hourlyRateCents: null }),
+      beneficiaryLine({ id: 'benef-2', hourlyRateCents: undefined }),
+    ])
+
+    expect(saisi?.amountCents).toBeNull()
+    // Non communiqué à ce rôle : même résultat, mais l'écran n'écrira pas « À saisir ».
+    expect(communique?.amountCents).toBeNull()
+  })
+
+  it('compte le prévisionnel dans le solde, pas le seul réalisé', () => {
+    const [line] = forecastByBeneficiary([
+      beneficiaryLine({ declaredMinutes: 240, plannedMinutes: 120, referenceMinutes: 600 }),
+    ])
+
+    // 600 − (240 + 120) = 240, et non 600 − 240.
+    expect(line?.balanceMinutes).toBe(240)
+  })
+
+  it('devient négatif en cas de dépassement', () => {
+    const [line] = forecastByBeneficiary([
+      beneficiaryLine({ declaredMinutes: 480, plannedMinutes: 180, referenceMinutes: 600 }),
+    ])
+
+    expect(line?.balanceMinutes).toBe(-60)
+  })
+
+  it('ne dit rien sans volume autorisé', () => {
+    // Lire `null` comme 0 ferait paraître tout le monde en dépassement.
+    const [line] = forecastByBeneficiary([beneficiaryLine({ referenceMinutes: null })])
+    expect(line?.balanceMinutes).toBeNull()
+  })
+})
+
+describe('forecastSummary', () => {
+  it('additionne les heures et les montants du mois', () => {
+    const summary = forecastSummary(forecastByBeneficiary([
+      beneficiaryLine({ declaredMinutes: 120, hourlyRateCents: 1650, referenceMinutes: 600 }),
+      beneficiaryLine({ id: 'benef-2', name: 'Robert Bernard', plannedMinutes: 60, hourlyRateCents: 1550, referenceMinutes: 300 }),
+    ]))
+
+    expect(summary.forecastMinutes).toBe(180)
+    // 2 h à 16,50 € + 1 h à 15,50 € = 48,50 €.
+    expect(summary.amountCents).toBe(4850)
+    expect(summary.missingRateCount).toBe(0)
+    expect(summary.balanceMinutes).toBe(720)
+    expect(summary.withoutVolumeCount).toBe(0)
+    expect(summary.exceededCount).toBe(0)
+  })
+
+  it('rend le montant « À saisir » dès qu\'un taux manque', () => {
+    // Un total partiel présenté comme complet finirait sur une déclaration.
+    const summary = forecastSummary(forecastByBeneficiary([
+      beneficiaryLine({ declaredMinutes: 120, hourlyRateCents: 1650 }),
+      beneficiaryLine({ id: 'benef-2', name: 'Robert Bernard', declaredMinutes: 60, hourlyRateCents: null }),
+    ]))
+
+    expect(summary.amountCents).toBeNull()
+    expect(summary.missingRateCount).toBe(1)
+    // Les heures, elles, restent complètes : elles ne dépendent d'aucun taux.
+    expect(summary.forecastMinutes).toBe(180)
+  })
+
+  it('ne totalise le solde que des bénéficiaires qui ont un volume', () => {
+    const summary = forecastSummary(forecastByBeneficiary([
+      beneficiaryLine({ declaredMinutes: 120, referenceMinutes: 600 }),
+      beneficiaryLine({ id: 'benef-2', name: 'Robert Bernard', declaredMinutes: 60, referenceMinutes: null }),
+    ]))
+
+    expect(summary.balanceMinutes).toBe(480)
+    expect(summary.withoutVolumeCount).toBe(1)
+  })
+
+  it('ne prétend à aucun solde quand aucun volume n\'est saisi', () => {
+    const summary = forecastSummary(forecastByBeneficiary([beneficiaryLine({ referenceMinutes: null })]))
+
+    expect(summary.balanceMinutes).toBeNull()
+    expect(summary.withoutVolumeCount).toBe(1)
+  })
+
+  it('compte les bénéficiaires en dépassement', () => {
+    const summary = forecastSummary(forecastByBeneficiary([
+      beneficiaryLine({ declaredMinutes: 660, referenceMinutes: 600 }),
+      beneficiaryLine({ id: 'benef-2', name: 'Robert Bernard', declaredMinutes: 600, referenceMinutes: 600 }),
+    ]))
+
+    expect(summary.exceededCount).toBe(1)
+    expect(summary.balanceMinutes).toBe(-60)
   })
 })

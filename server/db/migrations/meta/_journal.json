@@ -15,6 +15,13 @@
       "when": 1790985986518,
       "tag": "0001_narrow_clea",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791123997906,
+      "tag": "0002_heavy_vargas",
+      "breakpoints": true
     }
   ]
 }

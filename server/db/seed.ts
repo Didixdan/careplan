@@ -1,10 +1,11 @@
 import { loadEnvFile } from 'node:process'
 import { eq } from 'drizzle-orm'
 import { startOfWeek, today } from '../../app/utils/date'
+import { tagKey } from '../../app/utils/tags'
 import { scryptHash } from '../utils/password'
 import { closeDb, useDb } from '../utils/db'
-import { assistantFixtures, beneficiaryFixtures, buildAppointments } from './fixtures'
-import { appointmentAssistants, appointments, assignments, assistants, beneficiaries, mileage, users } from './schema'
+import { assistantFixtures, beneficiaryFixtures, buildAppointments, buildTags } from './fixtures'
+import { appointmentAssistants, appointmentTags, appointments, assignments, assistants, beneficiaries, mileage, tags, users } from './schema'
 
 // Chargé ici, pas par Nuxt : le seed tourne hors du runtime (tsx).
 try {
@@ -14,8 +15,13 @@ catch {
   // `.env` absent : DATABASE_URL viendra de l'environnement.
 }
 
-// Mot de passe de développement, commun à tous les comptes du seed.
-const DEV_PASSWORD = 'careplan'
+// Mot de passe de développement, commun aux comptes de démonstration (aidants + lecture).
+const DEV_PASSWORD = 'quZx$%A7'
+
+// Compte d'administration. Ces deux valeurs sont aussi celles des scénarios de bout en bout
+// (`cypress/support/e2e.ts`) : les changer ici oblige à les changer là-bas.
+const ADMIN_EMAIL = 'admin@careplan.prod'
+const ADMIN_PASSWORD = '@59y%P#5'
 
 /** Récupère l'unique ligne d'une insertion `.returning(...)`, en échouant sinon. */
 async function one<T>(rows: Promise<T[]>): Promise<T> {
@@ -28,10 +34,12 @@ async function seed() {
   const db = useDb()
 
   // Réinitialisation complète (donnée de dev) : les tables sont vidées dans l'ordre
-  // des dépendances, puis réinsérées.
+  // des dépendances, puis réinsérées. Les liens de tags partent avant leurs deux parents.
   await db.delete(mileage)
+  await db.delete(appointmentTags)
   await db.delete(appointmentAssistants)
   await db.delete(appointments)
+  await db.delete(tags)
   await db.delete(assignments)
   await db.delete(assistants)
   await db.delete(beneficiaries)
@@ -39,8 +47,8 @@ async function seed() {
 
   // Compte admin.
   await db.insert(users).values({
-    email: 'admin@careplan.local',
-    hashedPassword: scryptHash(DEV_PASSWORD),
+    email: ADMIN_EMAIL,
+    hashedPassword: scryptHash(ADMIN_PASSWORD),
     role: 'admin',
   })
 
@@ -86,7 +94,15 @@ async function seed() {
     }
   }
 
-  // Créneaux de la semaine courante + co-assistants + affectations.
+  // Le vocabulaire des actes, avant les créneaux qui le portent.
+  const tagByName = new Map<string, string>()
+  for (const name of buildTags()) {
+    const [tag] = await db.insert(tags).values({ name, key: tagKey(name) }).returning({ id: tags.id })
+    if (!tag) throw new Error(`Tag « ${name} » non inséré.`)
+    tagByName.set(name, tag.id)
+  }
+
+  // Créneaux de la semaine courante + leurs tags + co-assistants + affectations.
   const appointmentFixtures = buildAppointments(today())
   const assignedPairs = new Set<string>()
 
@@ -95,13 +111,19 @@ async function seed() {
       date: fixture.date,
       startTime: fixture.start,
       endTime: fixture.end,
-      title: fixture.title,
       status: fixture.status,
       beneficiaryId: beneficiaryBySlug.get(fixture.beneficiarySlug)!,
       primaryAssistantId: assistantBySlug.get(fixture.primaryAssistantSlug)!,
     }).returning({ id: appointments.id }))
 
     assignedPairs.add(`${fixture.primaryAssistantSlug}|${fixture.beneficiarySlug}`)
+
+    // L'ORDRE des tags est celui du modèle : c'est lui qui décide des trois affichés.
+    await db.insert(appointmentTags).values(fixture.tags.map((name, position) => ({
+      appointmentId: inserted.id,
+      tagId: tagByName.get(name)!,
+      position,
+    })))
 
     for (const slug of fixture.coAssistantSlugs) {
       await db.insert(appointmentAssistants).values({
@@ -120,17 +142,18 @@ async function seed() {
     })
   }
 
-  // Kilomètres déclarés : une journée pour Camille, pour que le récapitulatif et l'export
+  // Kilomètres déclarés : une journée pour Damien, pour que le récapitulatif et l'export
   // CESU montrent un chiffre réel plutôt qu'une colonne vide.
   await db.insert(mileage).values({
     date: startOfWeek(today()),
-    assistantId: assistantBySlug.get('camille')!,
+    assistantId: assistantBySlug.get('damien')!,
     kilometers: 12.5,
   })
 
   console.log(
     `✓ ${appointmentFixtures.length} créneaux, ${assistantFixtures.length} aidants, `
-    + `${beneficiaryFixtures.length} bénéficiaires, ${assignedPairs.size} affectations, 1 relevé de km`,
+    + `${beneficiaryFixtures.length} bénéficiaires, ${tagByName.size} tags, `
+    + `${assignedPairs.size} affectations, 1 relevé de km`,
   )
 }
 
