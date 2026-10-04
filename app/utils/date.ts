@@ -128,6 +128,18 @@ export function week(date: CivilDate): CivilDate[] {
   return Array.from({ length: 7 }, (_, i) => addDays(monday, i))
 }
 
+/**
+ * Nombre de jours à ajouter à une date de la semaine de `from` pour la porter dans la
+ * semaine de `to` — toujours un multiple de 7, signé.
+ *
+ * Sert à la copie d'une semaine sur une autre : un créneau garde son JOUR de la semaine et
+ * son heure, seule sa semaine change. Les deux dates d'entrée sont quelconques (on ne
+ * suppose pas qu'elles soient des lundis), leur semaine est résolue par `startOfWeek`.
+ */
+export function weekShift(from: CivilDate, to: CivilDate): number {
+  return dayIndex(startOfWeek(to)) - dayIndex(startOfWeek(from))
+}
+
 /** Numéro du jour dans le mois, sans zéro initial : « 14 ». */
 export function dayOfMonth(date: CivilDate): string {
   return String(toUTCDate(date).getUTCDate())

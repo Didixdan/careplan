@@ -1,4 +1,4 @@
-import { cleanup, freeDate, today } from '../support/e2e'
+import { cleanup, cleanupTags, freeDate, today, weekStart } from '../support/e2e'
 
 /**
  * L'API depuis le navigateur : permissions, transitions de statut, et le contenu des exports.
@@ -209,6 +209,168 @@ describe('API : les exports', () => {
       cy.request(`/api/appointments/summary?${params}`).then((summary) => {
         expect(summary.body.totals.declaredMinutes).to.equal(declared)
         expect(summary.body.totals.toValidateMinutes).to.be.at.least(0)
+      })
+    })
+  })
+})
+
+/**
+ * Copie d'une semaine : ce qui est refusé, et ce qui est écrit.
+ *
+ * La copie REMPLACE la semaine cible : elle porte donc sur des semaines que personne d'autre
+ * n'utilise (8 et 9 semaines), jamais sur la semaine du seed ni sur la zone de `freeDate()`.
+ */
+describe('API : copie d\'une semaine', () => {
+  const created: string[] = []
+  // Les tags du scénario repartent avec lui : `tags.cy.ts` attend une liste de suggestions
+  // COURTE, et un catalogue laissé sale lui ferait rater son compte (voir `cleanupTags`).
+  const tagNames: string[] = []
+  cleanup(created)
+  cleanupTags(tagNames)
+
+  const SOURCE = freeDate(56)
+  const TARGET = freeDate(63)
+  /** Une semaine que personne n'utilise : le refus d'une source vide se vérifie sur elle. */
+  const EMPTY = freeDate(700)
+
+  it('refuse la copie à une famille', () => {
+    cy.signIn('viewer')
+
+    cy.request({ url: `/api/appointments/copy?source=${SOURCE}&target=${TARGET}`, failOnStatusCode: false })
+      .its('status').should('equal', 403)
+
+    cy.request({
+      method: 'POST',
+      url: '/api/appointments/copy',
+      failOnStatusCode: false,
+      body: { source: SOURCE, target: TARGET, replace: true },
+    }).its('status').should('equal', 403)
+  })
+
+  it('refuse une copie mal formée et une source vide', () => {
+    cy.signIn('admin')
+
+    // Date inexistante, et paramètre manquant : la réponse doit dire quoi corriger.
+    cy.request({ url: `/api/appointments/copy?source=2027-02-30&target=${TARGET}`, failOnStatusCode: false })
+      .its('status').should('equal', 400)
+    cy.request({ url: `/api/appointments/copy?source=${SOURCE}`, failOnStatusCode: false })
+      .its('status').should('equal', 400)
+
+    // Copier une semaine sur elle-même n'est pas une copie : c'est une remise à « Planifié ».
+    cy.request({ url: `/api/appointments/copy?source=${SOURCE}&target=${SOURCE}`, failOnStatusCode: false })
+      .its('status').should('equal', 400)
+
+    // Une source VIDE ne doit rien supprimer : c'est le cas qui viderait une semaine par
+    // accident. On vérifie d'abord que la semaine est bien vide, sinon le 409 ne prouverait rien.
+    //
+    // L'APERÇU, lui, répond 200 et annonce 0 créneau : c'est ce que lit l'écran pour désactiver
+    // son bouton. Refuser dès la lecture rendrait la modale muette au lieu de l'expliquer.
+    cy.request(`/api/appointments?week=${EMPTY}`).its('body').should((rows) => {
+      expect(rows).to.have.length(0)
+    })
+    cy.request(`/api/appointments/copy?source=${EMPTY}&target=${TARGET}`).then((preview) => {
+      expect(preview.body.sourceCount).to.equal(0)
+    })
+
+    // Seule la COPIE refuse, et c'est ce refus qui garantit que la cible n'est jamais vidée.
+    cy.request({
+      method: 'POST',
+      url: '/api/appointments/copy',
+      failOnStatusCode: false,
+      body: { source: EMPTY, target: TARGET },
+    }).its('status').should('equal', 409)
+  })
+
+  it('n\'écrit rien sans confirmation, puis remplace la semaine cible', () => {
+    cy.signIn('admin')
+    tagNames.push('Vérif copie API origine', 'Vérif copie API occupation')
+
+    cy.referenceLists().then(({ beneficiaries, assistants }) => {
+      cy.createFreeAppointment({
+        date: SOURCE, tags: ['Vérif copie API origine'], status: 'planned',
+        beneficiaryId: beneficiaries[0].id, primaryAssistantId: assistants[0].id,
+      }).then(({ id }) => created.push(id))
+
+      cy.createFreeAppointment({
+        date: TARGET, tags: ['Vérif copie API occupation'], status: 'planned',
+        beneficiaryId: beneficiaries[0].id, primaryAssistantId: assistants[0].id,
+      }).then(({ id }) => {
+        created.push(id)
+
+        // Sans `replace`, le serveur refuse : un écran périmé ne supprime rien tout seul.
+        cy.request({
+          method: 'POST',
+          url: '/api/appointments/copy',
+          failOnStatusCode: false,
+          body: { source: SOURCE, target: TARGET },
+        }).its('status').should('equal', 409)
+
+        cy.request(`/api/appointments?week=${weekStart(TARGET)}`).its('body').should((rows) => {
+          expect(rows, 'la cible est intacte').to.have.length(1)
+          expect(rows[0].status).to.equal('planned')
+        })
+
+        cy.request({
+          method: 'POST',
+          url: '/api/appointments/copy',
+          body: { source: SOURCE, target: TARGET, replace: true },
+        }).then((response) => {
+          expect(response.body).to.deep.equal({ copied: 1, deleted: 1 })
+        })
+
+        cy.request(`/api/appointments?week=${weekStart(TARGET)}`).its('body').then((rows) => {
+          expect(rows.map((row: { status: string }) => row.status)).to.deep.equal(['planned'])
+          for (const row of rows) created.push(row.id as string)
+        })
+      })
+    })
+  })
+
+  it('ne copie, pour un aidant, que ses propres créneaux', () => {
+    tagNames.push('Vérif copie aidant', 'Vérif copie collègue')
+
+    // Son identifiant de profil se lit depuis SON compte : la route `options` ne lui montre
+    // que lui-même.
+    cy.signIn('assistant')
+    cy.request('/api/appointments/options').then((options) => {
+      const me = options.body.assistants[0]
+
+      cy.signIn('admin')
+      cy.referenceLists().then(({ beneficiaries, assistants }) => {
+        const colleague = assistants.find(assistant => assistant.id !== me.id)!
+
+        cy.createFreeAppointment({
+          date: SOURCE, tags: ['Vérif copie aidant'], status: 'planned',
+          beneficiaryId: beneficiaries[0].id, primaryAssistantId: me.id,
+        }).then(({ id }) => created.push(id))
+
+        cy.createFreeAppointment({
+          date: SOURCE, tags: ['Vérif copie collègue'], status: 'planned',
+          beneficiaryId: beneficiaries[0].id, primaryAssistantId: colleague.id,
+        }).then(({ id }) => created.push(id))
+
+        // L'aidant ne voit, dans l'aperçu, que le créneau dont il est l'aidant PRINCIPAL.
+        cy.signIn('assistant')
+        cy.request(`/api/appointments/copy?source=${SOURCE}&target=${TARGET}`).then((preview) => {
+          expect(preview.body.sourceCount).to.equal(1)
+          expect(preview.body.cancelled).to.deep.equal([])
+        })
+
+        cy.request({
+          method: 'POST',
+          url: '/api/appointments/copy',
+          body: { source: SOURCE, target: TARGET },
+        }).then((response) => {
+          expect(response.body).to.deep.equal({ copied: 1, deleted: 0 })
+        })
+
+        // Relu par l'ADMIN : le créneau du collègue n'a pas été recopié.
+        cy.signIn('admin')
+        cy.request(`/api/appointments?week=${weekStart(TARGET)}`).its('body').then((rows) => {
+          expect(rows).to.have.length(1)
+          expect(rows[0].primaryAssistantId).to.equal(me.id)
+          created.push(rows[0].id as string)
+        })
       })
     })
   })

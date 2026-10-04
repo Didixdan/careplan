@@ -91,6 +91,22 @@ function openCreate() {
   isCreating.value = true
 }
 
+/**
+ * Copie d'une semaine sur celle qui est affichée. La modale est exclusive avec les deux
+ * autres : on ne remplit pas un créneau en remplaçant toute la semaine.
+ */
+const isCopying = ref(false)
+
+function openCopy() {
+  isCreating.value = false
+  selectedAppointment.value = null
+  isCopying.value = true
+}
+
+function closeCopy() {
+  isCopying.value = false
+}
+
 function selectAppointment(appointment: Appointment) {
   isCreating.value = false
   selectedAppointment.value = appointment
@@ -285,6 +301,20 @@ function currentWeek() {
         >
           {{ toValidate }} à vérifier
         </UiBadge>
+
+        <!-- Copie d'une semaine sur celle-ci. Action SECONDAIRE : le « + » reste la seule à
+             porter la couleur primaire (règle 5). Elle vit sur cette ligne et non dans
+             `.semaine__actions`, où un cinquième bouton de 44 px ne laisserait plus rien au
+             titre en 360 px (voir docs/decisions.md §6). -->
+        <UiButton
+          v-if="canEdit"
+          class="ml-auto"
+          variant="secondary"
+          size="sm"
+          @click="openCopy"
+        >
+          Copier une semaine
+        </UiButton>
       </div>
 
       <div
@@ -404,6 +434,19 @@ function currentWeek() {
         @saved="onSaved"
         @deleted="onDeleted"
         @cancel="closeModal"
+      />
+    </UiModal>
+
+    <!-- Copie d'une semaine : la cible est la semaine AFFICHÉE, on ne choisit que l'origine. -->
+    <UiModal
+      v-if="isCopying"
+      title="Copier une semaine"
+      @close="closeCopy"
+    >
+      <PlanningCopyWeekForm
+        :target="referenceDate"
+        @copied="refresh"
+        @cancel="closeCopy"
       />
     </UiModal>
   </div>

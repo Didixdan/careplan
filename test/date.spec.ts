@@ -19,6 +19,7 @@ import {
   monthAfter,
   shiftMonth,
   monthLabel,
+  weekShift,
 } from '~/utils/date'
 
 /**
@@ -316,5 +317,41 @@ describe('monthLabel', () => {
     expect(monthLabel('2026-10')).toBe('octobre 2026')
     expect(monthLabel('2026-01')).toBe('janvier 2026')
     expect(monthLabel('2026-12')).toBe('décembre 2026')
+  })
+})
+
+/**
+ * Décalage d'une semaine à l'autre, pour la copie de semaine.
+ *
+ * Un décalage faux d'un jour recopierait un créneau sur le mauvais jour de la semaine
+ * cible : le planning aurait l'air correct, avec un passage le mardi au lieu du lundi.
+ * Les cas testés sont ceux qui cassent un calcul fait « à la main » : deux références qui
+ * ne sont pas des lundis, et un franchissement de mois ou d'année.
+ */
+describe('weekShift', () => {
+  it('vaut 0 pour deux dates de la même semaine, même si ce ne sont pas des lundis', () => {
+    expect(weekShift('2025-03-10', '2025-03-16')).toBe(0)
+    expect(weekShift('2025-03-14', '2025-03-11')).toBe(0)
+  })
+
+  it('avance de 7 jours par semaine', () => {
+    expect(weekShift('2025-03-10', '2025-03-17')).toBe(7)
+    expect(weekShift('2025-03-10', '2025-03-31')).toBe(21)
+  })
+
+  it('recule d\'autant, avec un signe négatif', () => {
+    expect(weekShift('2025-03-17', '2025-03-10')).toBe(-7)
+  })
+
+  it('franchit un changement de mois', () => {
+    expect(weekShift('2025-02-24', '2025-03-03')).toBe(7)
+  })
+
+  it('franchit un changement d\'année', () => {
+    expect(weekShift('2025-12-29', '2026-01-05')).toBe(7)
+  })
+
+  it('enjambe l\'année bissextile sans perdre de jour', () => {
+    expect(weekShift('2024-02-26', '2024-03-04')).toBe(7)
   })
 })

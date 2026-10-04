@@ -95,7 +95,7 @@ server/
   services/                  logique applicative (un service par entité)
   api/appointments/          lecture filtrée par rôle (jour / semaine / mois), listes de
                              référence, récapitulatif, création, déplacement, édition,
-                             suppression
+                             suppression, copie d'une semaine sur une autre
   api/tags/                   catalogue des tags : lecture (aidants + admin), écriture (admin)
   api/auth/                  connexion / déconnexion
 app/middleware/              garde d'authentification (redirection /login)
@@ -339,6 +339,46 @@ tags** y voyage en entier : l'autocomplete filtre côté client, donc aucune req
 message et un bouton « Réessayer », jamais un écran vide. C'est le seul point à
 modifier pour brancher la base.
 
+### Copie d'une semaine sur une autre
+
+La vue `/week` porte un bouton « Copier une semaine » : la cible est **toujours la semaine
+affichée**, on ne choisit que l'origine (un sélecteur de date, par défaut la semaine
+précédente). La copie sert à **préparer un planning qui n'existe pas encore**, pas à alimenter
+un planning déjà rempli — d'où une règle de remplacement, et non de fusion.
+
+**Remplacer, pas fusionner** : les créneaux de la cible, dans le périmètre de l'utilisateur,
+sont supprimés puis remplacés par ceux de la source, **dans une seule transaction** — une
+semaine à moitié remplacée serait un planning faux. Une cible non vide est annoncée avant le
+clic puis **confirmée** ; sans confirmation, rien n'est écrit, et le serveur refuse en 409 une
+cible occupée non confirmée : un écran périmé ne supprime donc rien tout seul. Une source
+**vide** est refusée en 409 et n'efface jamais la cible — c'est le cas qui viderait une
+semaine par accident.
+
+**Aucun contrôle de chevauchement n'est refait**, et c'est volontaire : la donnée copiée existe
+déjà en base, donc elle est valide par construction. Les fixtures contiennent des
+chevauchements et une veille de 22:00 → 01:00 ; les refuser à la copie rendrait un planning
+réel incopiable. Seules les écritures unitaires passent par `assertNoAssistantOverlap`.
+
+**Tous les statuts repartent en `planned`**, annulés compris. Une copie est un prévisionnel :
+recopier « Réalisé » inventerait des heures à déclarer au CESU, et « à vérifier » une
+vérification déjà faite. Mais une annulation peut être une demande ponctuelle d'une famille :
+ces créneaux sont **listés dans la confirmation**, pour que personne ne les recopie par
+inadvertance.
+
+Ce qui suit un créneau : ses horaires, son **bénéficiaire**, ses **tags** (copiés par
+identifiant — une copie ne crée ni ne renomme de tag) et ses **co-aidants** (un passage à deux
+reste à deux). Ce qui ne suit pas : les **kilomètres**, qui déclarent ce qui a été fait jour
+par jour.
+
+**Périmètre** : l'admin copie toute la semaine, **même quand le filtre « Aidant » est actif**
+(le filtre ne borne que l'affichage) ; un aidant ne copie que les créneaux dont il est l'aidant
+**principal**. La même règle choisit ce qui est supprimé dans la cible — « on remplace
+exactement ce qu'on copie » — sans quoi un aidant effacerait le planning d'un collègue.
+
+L'aperçu (`GET /api/appointments/copy`) est la **source unique des comptes affichés** : il
+applique la même règle de périmètre que la copie, donc l'écran ne peut pas annoncer autre chose
+que ce que le serveur fera.
+
 ### Actions rapides de statut
 
 Un passage terminé se marque **sur la carte**, en un clic, sans ouvrir la modale. Les deux
@@ -559,8 +599,11 @@ importante est vérifiée par du code exécutable :
 | Lignes d'export, « À saisir », totaux par aidant | `pnpm test` (`export.spec.ts`) |
 | Texte du message aux familles | `pnpm test` (`message.spec.ts`) |
 | Saisie des kilomètres : virgule, borne, arrondi, somme de flottants | `pnpm test` (`mileage.spec.ts`) |
+| Décalage d'une semaine à l'autre, et son signe | `pnpm test` (`date.spec.ts`, `weekShift`) |
 | La colonne « Km » du CSV, remplie sur le total seulement | `pnpm test` (`export.spec.ts`) |
 | Le filtre par rôle, la création, l'édition, la suppression, les statuts refusés | `pnpm e2e` (`api.cy.ts`) |
+| La copie : refus d'une famille, source vide, cible non confirmée, périmètre de l'aidant | `pnpm e2e` (`api.cy.ts`) |
+| L'aperçu d'une copie, l'avertissement des annulés, la confirmation du remplacement | `pnpm e2e` (`copy.cy.ts`) |
 | Le CSV réellement servi, et le récap qui raconte la même chose que la liste | `pnpm e2e` (`api.cy.ts`) |
 | La saisie des kilomètres du jour, et son effet sur le récapitulatif | `pnpm e2e` (`mileage.cy.ts`) |
 | Les actions rapides réellement rendues : combien de boutons, pour quel rôle | `pnpm e2e` (`planning.cy.ts`) |

@@ -83,6 +83,12 @@
     @apply px-2.5 py-3 text-xs text-ink-muted;
   }
 
+  // Avertissement de la copie de semaine : la liste des passages ANNULÉS de la semaine
+  // source, qui repartiront en « Planifié ». Rendue dans la modale de copie.
+  .semaine__copie-liste {
+    @apply flex flex-col gap-0.5 text-xs text-ink-muted;
+  }
+
   .semaine__entete {
     @apply flex shrink-0 items-baseline justify-between gap-1 border-b border-line px-2.5 py-2;
   }

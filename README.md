@@ -144,9 +144,9 @@ app/
   components/
     ui/                      UiButton, UiBadge, UiCard, UiCopyButton, UiModal, UiSkeleton,
                              UiEmptyState, UiErrorPage, UiPersonIcon
-    planning/                PlanningAppointment, PlanningAppointmentForm, PlanningTagPicker,
-                             PlanningStatusActions, PlanningTimeGrid, PlanningTimedAppointment,
-                             PlanningWeekGrid
+    planning/                PlanningAppointment, PlanningAppointmentForm, PlanningCopyWeekForm,
+                             PlanningTagPicker, PlanningStatusActions, PlanningTimeGrid,
+                             PlanningTimedAppointment, PlanningWeekGrid
     layout/                  LayoutShell (nav basse mobile, colonne en desktop)
   composables/               theme.ts, planning.ts, loading.ts, drag.ts, status.ts, mileage.ts
   pages/                     index (jour), week, month (récapitulatif), assistants,
@@ -162,7 +162,7 @@ server/db/seed.ts            peuplement de la base locale
 server/services/             logique applicative (un service par entité)
 server/api/appointments/     lecture jour / semaine / mois filtrée par rôle, listes de
                              référence, récapitulatif, création, déplacement, édition,
-                             statut, suppression
+                             statut, suppression, copie d'une semaine sur une autre
 server/api/tags/             catalogue des tags : lecture (aidants + admin), écriture (admin)
 server/api/mileage/          kilomètres déclarés : lecture du jour, écriture (ou effacement)
 server/api/exports/          exports CSV : récapitulatif CESU du mois, semaine par aidant
@@ -184,7 +184,7 @@ docker-compose.yml           Postgres 17 pour le développement local
 | Route | Vue |
 | --- | --- |
 | `/` | **Jour** — grille horaire (07h–22h) : créneaux créés, modifiés, déplacés (glisser-déposer), marqués réalisés/annulés en un clic et supprimés depuis l'écran, **kilomètres du jour déclarés par aidant** |
-| `/week` | **Semaine** — sept blocs de jour empilés (1, 2 puis 3 par ligne), chacun borné à quatre heures et défilant pour lui-même ; déplacement entre jours, mêmes actions rapides de statut, **exports de la semaine** (CSV par aidant, message par famille) |
+| `/week` | **Semaine** — sept blocs de jour empilés (1, 2 puis 3 par ligne), chacun borné à quatre heures et défilant pour lui-même ; déplacement entre jours, mêmes actions rapides de statut, **copie complète d'une semaine sur celle qui est affichée** (remplacement confirmé, annulés signalés), **exports de la semaine** (CSV par aidant, message par famille) |
 | `/month` | **Mois** — récapitulatif : heures à déclarer par aidant, **solde prévisionnel** (heures restant à planifier et montant prévisionnel, au taux de chaque bénéficiaire), volume autorisé par bénéficiaire, détail des journées, **export CESU en CSV** |
 | `/styleguide` | Écran de contrôle du design system (couleurs, polices, contrastes) |
 | `/login` | Page de connexion (identifiants + mot de passe) |
@@ -210,7 +210,9 @@ cartes (réalisé / annulé, ou remise en planifié) sans passer par la modale,
 **exports** : CSV CESU du mois par aidant (heures × taux, « À saisir » si le taux
 manque, colonne « Km »), CSV de la semaine par aidant, et message prêt à coller pour
 chaque famille, **kilomètres déclarés une fois par jour** par l'aidant (aucun montant
-calculé : c'est un relevé).
+calculé : c'est un relevé), **copie complète d'une semaine sur une autre** depuis la vue
+semaine (remplacement de la semaine cible après confirmation, statuts remis en
+prévisionnel, annulés signalés, périmètre borné au rôle).
 
 Les vues lisent les créneaux en base via `/api/appointments`, filtrées selon le rôle.
 `?fail=1` force l'échec de lecture. Comptes de dev (mot de passe `careplan`) :

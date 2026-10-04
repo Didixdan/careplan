@@ -102,6 +102,55 @@ export interface AppointmentFormOptions {
 }
 
 /**
+ * Un créneau ANNULÉ de la semaine source. Il sera recopié en « Planifié », donc l'écran le
+ * signale avant l'écriture : une annulation peut être exceptionnelle (demande d'une famille)
+ * et ne pas se reproduire la semaine suivante.
+ *
+ * Non exporté : il ne se lit qu'à travers l'aperçu, qui le porte.
+ */
+interface CopyWeekCancelled {
+  date: string
+  start: string
+  end: string
+  beneficiary: string
+}
+
+/**
+ * Ce que la copie FERA, lu AVANT d'écrire (`GET /api/appointments/copy`). L'écran n'a ainsi
+ * aucun compte à deviner : les nombres affichés sont ceux du serveur, donc ceux qui seront
+ * réellement copiés et supprimés.
+ */
+export interface CopyWeekPreview {
+  /** Lundi de la semaine source. */
+  sourceWeek: string
+  /** Lundi de la semaine cible. */
+  targetWeek: string
+  /** Créneaux de la source dans le périmètre de copie. `0` = rien à copier. */
+  sourceCount: number
+  /** Créneaux déjà présents dans la cible, DANS LE PÉRIMÈTRE DE REMPLACEMENT. */
+  targetCount: number
+  /** Annulés de la source, dans l'ordre du calendrier. */
+  cancelled: CopyWeekCancelled[]
+}
+
+/** Corps de `POST /api/appointments/copy`. Les deux dates désignent leur semaine. */
+export interface CopyWeekRequest {
+  source: string
+  target: string
+  /**
+   * `true` = l'utilisateur a confirmé que la semaine cible sera remplacée. Sans ce drapeau,
+   * le serveur refuse (409) une cible non vide : un écran périmé ne supprime rien tout seul.
+   */
+  replace?: boolean
+}
+
+/** Résultat de la copie : ce qui a été écrit, et ce qui a été supprimé pour l'écrire. */
+export interface CopyWeekResult {
+  copied: number
+  deleted: number
+}
+
+/**
  * Cumuls d'heures d'un récapitulatif. Seul le RÉALISÉ (`completed`) se déclare ; « à
  * vérifier » (`to_validate`) a son propre cumul, hors total ; le prévisionnel (`planned`) est
  * affiché à part ; `cancelled` ne compte nulle part — la règle vit dans `app/utils/summary.ts`.

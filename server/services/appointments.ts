@@ -1,7 +1,7 @@
 import { and, asc, eq, gte, inArray, lt, ne, or } from 'drizzle-orm'
 import { conflictingIds, type BookedRange } from '../../app/utils/conflicts'
 import type { CivilDate } from '../../app/utils/date'
-import { addDays, isCivilDate, isCivilMonth, monthAfter, monthStart, startOfWeek, week as weekOf } from '../../app/utils/date'
+import { addDays, isCivilDate, isCivilMonth, monthAfter, monthStart, startOfWeek, week as weekOf, weekShift } from '../../app/utils/date'
 import type { AssistantColor } from '../../app/utils/colors'
 import { durationInMinutes } from '../../app/utils/duration'
 import type { CesuLine, WeekLine } from '../../app/utils/export'
@@ -18,6 +18,9 @@ import {
 import type {
   Appointment,
   AppointmentFormOptions,
+  CopyWeekPreview,
+  CopyWeekRequest,
+  CopyWeekResult,
   MonthSummary,
   PersonSummary,
   Role,
@@ -910,4 +913,260 @@ export async function moveAppointment(
   }).where(eq(appointments.id, id))
 
   return true
+}
+
+/**
+ * Copie d'une semaine sur une autre.
+ *
+ * Le vocabulaire est celui du domaine, pas de la base : on COPIE des créneaux, on ne
+ * « duplique » pas des lignes. Rien ici ne lit ni n'écrit d'objet `Date` (règle 3) : les
+ * dates restent des chaînes civiles, décalées par `weekShift`.
+ */
+
+/** Le rôle lecture seule ne copie rien : même refus que la création, même message. */
+function assertMayCopy(user: UserFilter): void {
+  if (user.role === 'viewer') {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Consultation seule : la copie est réservée à l\'administrateur et aux aidants.',
+    })
+  }
+
+  if (user.role === 'assistant' && !user.assistantId) {
+    throw createError({ statusCode: 403, statusMessage: 'Profil d\'aidant introuvable.' })
+  }
+}
+
+/**
+ * Validation commune aux deux routes : deux dates civiles, et deux semaines DIFFÉRENTES.
+ *
+ * Copier une semaine sur elle-même supprimerait puis réécrirait les mêmes créneaux en
+ * changeant leurs statuts : ce n'est pas une copie, c'est une remise à « Planifié » déguisée.
+ */
+function copyWeeks(source: string, target: string): { sourceWeek: CivilDate, targetWeek: CivilDate } {
+  if (!isCivilDate(source) || !isCivilDate(target)) {
+    throw createError({ statusCode: 400, statusMessage: 'Date invalide.' })
+  }
+
+  const sourceWeek = startOfWeek(source)
+  const targetWeek = startOfWeek(target)
+
+  if (sourceWeek === targetWeek) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'La semaine source et la semaine cible sont identiques.',
+    })
+  }
+
+  return { sourceWeek, targetWeek }
+}
+
+/** Un créneau d'une semaine, avec de quoi le réécrire ailleurs : tags et co-aidants inclus. */
+interface WeekRow {
+  id: string
+  date: string
+  start: string
+  end: string
+  status: string
+  beneficiaryId: string
+  beneficiaryName: string
+  primaryAssistantId: string
+  tagIds: string[]
+  coAssistantIds: string[]
+}
+
+/**
+ * Les créneaux d'une semaine, bornés au PÉRIMÈTRE D'ÉCRITURE de l'utilisateur.
+ *
+ * La MÊME fonction décide de ce qu'on copie et de ce qu'on supprime dans la semaine cible :
+ * « on remplace exactement ce qu'on copie ». Sans cette règle, un aidant effacerait le
+ * planning d'un collègue avec une copie qui ne porte que sur ses propres créneaux.
+ *
+ * L'aidant est borné à ses créneaux d'aidant PRINCIPAL : un créneau où il n'est que
+ * co-aidant appartient au planning de quelqu'un d'autre, il ne le copie pas.
+ */
+async function scopedWeekRows(weekStart: CivilDate, user: UserFilter): Promise<WeekRow[]> {
+  const db = useDb()
+
+  const conditions = [
+    gte(appointments.date, weekStart),
+    lt(appointments.date, addDays(weekStart, 7)),
+  ]
+
+  if (user.role === 'assistant') {
+    conditions.push(eq(appointments.primaryAssistantId, user.assistantId ?? ''))
+  }
+
+  const rows = await db
+    .select({
+      id: appointments.id,
+      date: appointments.date,
+      start: appointments.startTime,
+      end: appointments.endTime,
+      status: appointments.status,
+      beneficiaryId: appointments.beneficiaryId,
+      beneficiaryFirstName: beneficiaries.firstName,
+      beneficiaryLastName: beneficiaries.lastName,
+      primaryAssistantId: appointments.primaryAssistantId,
+    })
+    .from(appointments)
+    .innerJoin(beneficiaries, eq(beneficiaries.id, appointments.beneficiaryId))
+    .where(and(...conditions))
+    .orderBy(asc(appointments.date), asc(appointments.startTime))
+
+  if (rows.length === 0) return []
+
+  const ids = rows.map(row => row.id)
+
+  // Tags et co-aidants en deux requêtes pour toute la semaine, comme `listAppointments` :
+  // leurs ORDRES respectifs (position, insertion) doivent être conservés à la copie.
+  const tagRows = await db
+    .select({ appointmentId: appointmentTags.appointmentId, tagId: appointmentTags.tagId })
+    .from(appointmentTags)
+    .where(inArray(appointmentTags.appointmentId, ids))
+    .orderBy(asc(appointmentTags.position))
+
+  const tagIdsByAppointment = new Map<string, string[]>()
+  for (const tag of tagRows) {
+    tagIdsByAppointment.set(tag.appointmentId, [...(tagIdsByAppointment.get(tag.appointmentId) ?? []), tag.tagId])
+  }
+
+  const coRows = await db
+    .select({ appointmentId: appointmentAssistants.appointmentId, assistantId: appointmentAssistants.assistantId })
+    .from(appointmentAssistants)
+    .where(inArray(appointmentAssistants.appointmentId, ids))
+
+  const coIdsByAppointment = new Map<string, string[]>()
+  for (const co of coRows) {
+    coIdsByAppointment.set(co.appointmentId, [...(coIdsByAppointment.get(co.appointmentId) ?? []), co.assistantId])
+  }
+
+  return rows.map(row => ({
+    id: row.id,
+    date: row.date,
+    start: row.start,
+    end: row.end,
+    status: row.status,
+    beneficiaryId: row.beneficiaryId,
+    beneficiaryName: fullName(row.beneficiaryFirstName, row.beneficiaryLastName),
+    primaryAssistantId: row.primaryAssistantId,
+    tagIds: tagIdsByAppointment.get(row.id) ?? [],
+    coAssistantIds: coIdsByAppointment.get(row.id) ?? [],
+  }))
+}
+
+/**
+ * Aperçu d'une copie, lu AVANT d'écrire (`GET /api/appointments/copy`).
+ *
+ * C'est la source unique des comptes affichés par l'écran : ils viennent de la même règle de
+ * périmètre que la copie, donc l'écran ne peut pas promettre autre chose que ce que le
+ * serveur fera. Lecture seule, aucune écriture.
+ */
+export async function previewCopyWeek(
+  input: { source: string, target: string },
+  user: UserFilter,
+): Promise<CopyWeekPreview> {
+  assertMayCopy(user)
+  const { sourceWeek, targetWeek } = copyWeeks(input.source, input.target)
+
+  const [source, target] = await Promise.all([
+    scopedWeekRows(sourceWeek, user),
+    scopedWeekRows(targetWeek, user),
+  ])
+
+  return {
+    sourceWeek,
+    targetWeek,
+    sourceCount: source.length,
+    targetCount: target.length,
+    // Les annulés sont signalés, pas cachés : ils repartiront en « Planifié », ce qui peut
+    // recréer un passage que la famille avait annulé pour une raison ponctuelle.
+    cancelled: source
+      .filter(row => row.status === 'cancelled')
+      .map(row => ({ date: row.date, start: row.start, end: row.end, beneficiary: row.beneficiaryName })),
+  }
+}
+
+/**
+ * Recopie une semaine sur une autre : les créneaux de la cible, dans le périmètre de
+ * l'utilisateur, sont SUPPRIMÉS puis remplacés par ceux de la source, dans une seule
+ * transaction — une semaine à moitié remplacée serait un planning faux.
+ *
+ * Trois règles qui ne se lisent pas dans le code appelant :
+ * - **Statuts remis à `planned`** : une copie est un prévisionnel. Recopier « Réalisé »
+ *   inventerait des heures à déclarer au CESU, et « à vérifier » une vérification déjà faite.
+ * - **Aucun contrôle de chevauchement ni de plage horaire** : la donnée copiée existe déjà en
+ *   base, donc elle est valide par construction. Les fixtures contiennent volontairement des
+ *   chevauchements et une nuit de 22:00 → 01:00 ; les refuser ici rendrait un planning réel
+ *   incopiable.
+ * - **Tags copiés par identifiant** : le vocabulaire n'est ni créé ni renommé par une copie.
+ *
+ * Les kilomètres ne suivent pas : un relevé déclare ce qui a été fait, jour par jour.
+ */
+export async function copyWeek(input: CopyWeekRequest, user: UserFilter): Promise<CopyWeekResult> {
+  assertMayCopy(user)
+  const { sourceWeek, targetWeek } = copyWeeks(input.source, input.target)
+
+  const source = await scopedWeekRows(sourceWeek, user)
+  // Une source vide ne doit RIEN supprimer : sans cette sortie, copier une semaine vide
+  // viderait la cible, ce qui est exactement l'inverse de ce que la personne a demandé.
+  if (source.length === 0) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'La semaine choisie ne contient aucun créneau à copier.',
+    })
+  }
+
+  const target = await scopedWeekRows(targetWeek, user)
+  if (target.length > 0 && input.replace !== true) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: `La semaine cible contient ${target.length} créneau${target.length > 1 ? 'x' : ''} : `
+        + 'leur remplacement doit être confirmé.',
+    })
+  }
+
+  const shift = weekShift(sourceWeek, targetWeek)
+  const deletedIds = target.map(row => row.id)
+  const db = useDb()
+
+  await db.transaction(async (tx) => {
+    // Aucune cascade n'est déclarée au schéma : les co-aidants et les tags partent d'abord,
+    // sinon la clé étrangère bloque la suppression (même ordre que `deleteAppointment`).
+    if (deletedIds.length > 0) {
+      await tx.delete(appointmentAssistants).where(inArray(appointmentAssistants.appointmentId, deletedIds))
+      await tx.delete(appointmentTags).where(inArray(appointmentTags.appointmentId, deletedIds))
+      await tx.delete(appointments).where(inArray(appointments.id, deletedIds))
+    }
+
+    // Une insertion par créneau : l'identifiant est généré par la base, et la restitution
+    // d'un `INSERT` multi-lignes ne garantit aucun ordre, donc aucune correspondance
+    // fiable entre un créneau source et son identifiant. Une semaine en compte des dizaines.
+    for (const row of source) {
+      const [created] = await tx.insert(appointments).values({
+        date: addDays(row.date, shift),
+        startTime: row.start,
+        endTime: row.end,
+        status: 'planned',
+        beneficiaryId: row.beneficiaryId,
+        primaryAssistantId: row.primaryAssistantId,
+      }).returning({ id: appointments.id })
+
+      const appointmentId = created!.id
+
+      if (row.tagIds.length > 0) {
+        await tx.insert(appointmentTags).values(
+          row.tagIds.map((tagId, position) => ({ appointmentId, tagId, position })),
+        )
+      }
+
+      if (row.coAssistantIds.length > 0) {
+        await tx.insert(appointmentAssistants).values(
+          row.coAssistantIds.map(assistantId => ({ appointmentId, assistantId })),
+        )
+      }
+    }
+  })
+
+  return { copied: source.length, deleted: deletedIds.length }
 }
