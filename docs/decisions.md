@@ -415,16 +415,27 @@ de la date de début), donc pas de prorata inventé.
 heures qu'il a faites) mais **une seule fois le bénéficiaire** (le volume autorisé n'est
 pas une réserve consommée deux fois).
 
-**Un total n'est affiché que s'il est complet.** Voir n'est pas totaliser :
+**Un total n'est affiché que s'il est complet — mais un aidant voit son périmètre, et le
+périmètre de la famille.** Voir n'est pas totaliser :
 
 | Rôle | Par aidant | Par bénéficiaire |
 | --- | --- | --- |
 | `admin` | tous — complet | tous — complet |
-| `assistant` | **lui seul** : celle d'un collègue ignorerait ses autres bénéficiaires | aucune section |
+| `assistant` | **lui seul** : celle d'un collègue ignorerait ses autres bénéficiaires | **ses bénéficiaires** : ses heures à lui, plus le volume de la famille (`referenceDeclaredMinutes`, `referenceForecastMinutes`) |
 | `viewer` | aucune section | **son bénéficiaire** : tous ses créneaux, tous aidants confondus, donc consommé et autorisé sont exacts |
 
-Un total partiel présenté comme un total est pire qu'une section absente : il a l'air d'un
-chiffre à déclarer. La règle vit dans `totalsAllowed` (`server/services/appointments.ts`).
+La règle vit dans `totalsAllowed` (`server/services/appointments.ts`). Le cas de l'aidant est
+le seul qui demande un détour : le **volume autorisé appartient au bénéficiaire**, donc son
+« reste à planifier » ne peut pas se calculer sur ses seules heures — sinon il lirait
+« reste 6 h 30 » alors qu'un collègue en a déjà fait 5, et qu'il ne reste que 1 h 30. Le
+serveur renvoie donc, **pour ces bénéficiaires seulement**, les heures de tout le monde
+(agrégées, jamais les passages de ses collègues), et la carte le dit : « Prévisionnel 6 h 30
+(vos heures) · 90,00 € » à côté de « Après prévisionnel (tous aidants) : reste 1 h 30 ».
+
+**Un total partiel présenté comme un total est pire qu'une section absente** : il a l'air d'un
+chiffre à déclarer. C'est pourquoi les deux périmètres ne sont jamais mélangés dans la même
+phrase — le suffixe « (vos heures) » ou « (tous aidants) » apparaît **quand le DTO dit que la
+ligne n'est pas complète**, jamais selon le rôle deviné par l'écran.
 
 **Le volume autorisé d'un bénéficiaire est la seule référence MENSUELLE** du modèle : le
 ratio y est donc exact, et l'écran affiche une barre, le restant, ou le **dépassement**
@@ -445,11 +456,12 @@ coûtera-t-il ? », en quatre cases — prévu, heures prévisionnelles, montant
 - **Un agrégat positif peut cacher un dépassement** : le nombre de bénéficiaires en dépassement
   est donc affiché à côté du solde, sinon un total rassurant éteindrait l'alerte.
 
-**Le taux horaire n'est exposé qu'à l'admin** (`showRates` dans `summariseMonth`) : c'est lui
-qui paie. Un lecteur (bénéficiaire ou famille) ne reçoit pas le coût employeur, et un aidant
-reçoit ses montants par son export CESU. Le champ est alors **absent** du DTO (et non `null`,
-qui veut dire « pas encore saisi ») : l'écran n'écrit donc jamais « À saisir » là où il n'a
-pas le droit de montrer un montant.
+**Le taux horaire est exposé à l'admin et à l'aidant concerné** (`showRates` dans
+`summariseMonth`), jamais à un lecteur : un compte « famille » ne reçoit pas le coût employeur.
+Pour l'aidant, c'est le taux qui compose **sa** rémunération, et son export CESU le lui donne
+déjà — le récapitulatif ne fait que le lui montrer plus tôt. Le champ est **absent** du DTO
+quand le rôle n'y a pas droit (et non `null`, qui veut dire « pas encore saisi ») : l'écran
+n'écrit donc jamais « À saisir » là où il n'a pas le droit de montrer un montant.
 
 ### Exports
 
@@ -501,8 +513,8 @@ seront démenties :
 | **Aucune majoration** (nuit, dimanche, férié) | le montant est `heures × taux`, sans coefficient | un contrat prévoit une majoration : il faudra un taux par période |
 | **Un binôme coûte deux fois** | chaque aidant est payé de ses heures, donc l'employeur paie deux fois la même plage | la réalité est un partage, ou un seul aidant payé |
 | **Le ton du message aux familles** (« Bonjour, », 🗓️, ⏱️, prénom seul) | le texte est un choix de rédaction | il sonne trop familier ou trop sec : les constantes sont dans `app/utils/message.ts` |
-| **Un aidant voit les taux** des bénéficiaires chez qui il intervient | son export montre les taux qui composent son montant | ces taux doivent rester confidentiels : ils passeront à `null` dans sa ligne |
-| **Le taux n'est montré qu'à l'admin** dans le récapitulatif | l'écran d'un lecteur ou d'un aidant n'affiche que des heures, jamais un montant | la famille doit connaître le coût, ou un aidant veut son récapitulatif chiffré sans passer par l'export |
+| **Un aidant voit les taux** des bénéficiaires chez qui il intervient | son export **et son récapitulatif** montrent les taux qui composent son montant | ces taux doivent rester confidentiels : ils passeront à `null` dans sa ligne |
+| **L'aidant voit le volume restant de la famille** (tous aidants) | son « reste à planifier » est le chiffre réel, pas la part qu'il en a faite | voir les heures des collègues, même agrégées, devient un problème : il faudra masquer le solde et ne garder que ses heures |
 
 ### Dates et heures : jamais d'objet `Date` exposé
 

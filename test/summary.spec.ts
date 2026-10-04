@@ -7,6 +7,8 @@ import {
   forecastByBeneficiary,
   forecastMinutes,
   forecastSummary,
+  referenceExceeded,
+  referenceRemaining,
   remainingMinutes,
   summarise,
   summariseByAssistant,
@@ -348,6 +350,47 @@ describe('forecastByBeneficiary', () => {
     const [line] = forecastByBeneficiary([beneficiaryLine({ referenceMinutes: null })])
     expect(line?.balanceMinutes).toBeNull()
   })
+
+  it('calcule le solde sur les heures prévisionnelles de TOUS les aidants', () => {
+    const [line] = forecastByBeneficiary([
+      beneficiaryLine({ declaredMinutes: 120, referenceMinutes: 600, referenceForecastMinutes: 480 }),
+    ])
+
+    // 600 − 480 (tous aidants) = 120, et non 600 − 120 (les miennes).
+    expect(line?.balanceMinutes).toBe(120)
+    // Les heures de la ligne, elles, restent les siennes : c'est ce qui compose son montant.
+    expect(line?.forecastMinutes).toBe(120)
+  })
+})
+
+/**
+ * Le volume autorisé appartient au BÉNÉFICIAIRE : quand le serveur fournit les heures de tous
+ * les aidants (ligne d'un aidant, qui ne voit que ses passages), c'est elles qui le consomment.
+ * Sans ces tests, un aidant lirait « reste 6 h 30 » alors qu'il ne reste que 1 h 30.
+ */
+describe('referenceRemaining et referenceExceeded', () => {
+  it('utilise les heures de la ligne quand elle est complète', () => {
+    const line = beneficiaryLine({ declaredMinutes: 120, referenceMinutes: 600 })
+
+    expect(referenceRemaining(line)).toBe(480)
+    expect(referenceExceeded(line)).toBe(false)
+  })
+
+  it('utilise les heures de TOUS les aidants quand le serveur les fournit', () => {
+    // L'aidant n'a fait que 2 h, mais le volume est consommé par tout le monde.
+    const complete = beneficiaryLine({ declaredMinutes: 120, referenceMinutes: 600, referenceDeclaredMinutes: 600 })
+    expect(referenceRemaining(complete)).toBe(0)
+    expect(referenceExceeded(complete)).toBe(false)
+
+    const depasse = beneficiaryLine({ declaredMinutes: 120, referenceMinutes: 600, referenceDeclaredMinutes: 660 })
+    expect(referenceRemaining(depasse)).toBe(-60)
+    expect(referenceExceeded(depasse)).toBe(true)
+  })
+
+  it('ne dit rien sans volume autorisé', () => {
+    expect(referenceRemaining(beneficiaryLine({ referenceMinutes: null }))).toBeNull()
+    expect(referenceExceeded(beneficiaryLine({ referenceMinutes: null }))).toBe(false)
+  })
 })
 
 describe('forecastSummary', () => {
@@ -357,7 +400,6 @@ describe('forecastSummary', () => {
       beneficiaryLine({ id: 'benef-2', name: 'Robert Bernard', plannedMinutes: 60, hourlyRateCents: 1550, referenceMinutes: 300 }),
     ]))
 
-    expect(summary.forecastMinutes).toBe(180)
     // 2 h à 16,50 € + 1 h à 15,50 € = 48,50 €.
     expect(summary.amountCents).toBe(4850)
     expect(summary.missingRateCount).toBe(0)
@@ -375,8 +417,6 @@ describe('forecastSummary', () => {
 
     expect(summary.amountCents).toBeNull()
     expect(summary.missingRateCount).toBe(1)
-    // Les heures, elles, restent complètes : elles ne dépendent d'aucun taux.
-    expect(summary.forecastMinutes).toBe(180)
   })
 
   it('ne totalise le solde que des bénéficiaires qui ont un volume', () => {
@@ -387,6 +427,16 @@ describe('forecastSummary', () => {
 
     expect(summary.balanceMinutes).toBe(480)
     expect(summary.withoutVolumeCount).toBe(1)
+  })
+
+  it('ne dit RIEN d\'un mois sans ligne, au lieu de dire 0 €', () => {
+    // C'est le cas d'un aidant : le serveur ne lui envoie aucune ligne par bénéficiaire, donc
+    // un montant à 0 € serait un mensonge — et les heures, elles, viennent des cumuls.
+    const summary = forecastSummary([])
+
+    expect(summary.amountCents).toBeNull()
+    expect(summary.balanceMinutes).toBeNull()
+    expect(summary.withoutVolumeCount).toBe(0)
   })
 
   it('ne prétend à aucun solde quand aucun volume n\'est saisi', () => {

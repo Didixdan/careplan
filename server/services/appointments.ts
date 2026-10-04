@@ -9,6 +9,7 @@ import { checkTimeRange, GRID_END_MINUTES, GRID_START_MINUTES, type TimeRangePro
 import { isStatus, quickTransitions } from '../../app/utils/status'
 import { checkTagNames, cleanTagNames, MAX_TAGS, type TagProblem } from '../../app/utils/tags'
 import {
+  forecastMinutes,
   summarise,
   summariseByAssistant,
   summariseByBeneficiary,
@@ -207,18 +208,15 @@ export async function listAppointments(options: AppointmentQuery): Promise<Appoi
  *
  * Un total n'est honnête que s'il porte sur **tous** les créneaux de la personne :
  * - l'admin voit tout, ses deux sections sont donc complètes ;
- * - un aidant ne voit que ses créneaux : sa propre ligne est complète, celle d'un co-aidant
- *   ne le serait pas (elle ignorerait ses autres bénéficiaires) ;
+ * - un aidant ne voit que ses créneaux : sa propre ligne est complète (celle d'un co-aidant ne
+ *   le serait pas), et ses lignes par bénéficiaire ne comptent que SES passages — d'où les
+ *   volumes de référence calculés à part, sur toutes les heures du mois (`reference*`) ;
  * - une famille voit tous les créneaux de son bénéficiaire — sa consommation et son volume
  *   autorisé sont donc exacts — mais pas ceux d'un aidant chez d'autres personnes.
- *
- * Un total partiel présenté comme un total est pire qu'une section absente : il a l'air
- * d'un chiffre à déclarer.
  */
 function totalsAllowed(user: UserFilter | undefined): { assistants: boolean, beneficiaries: boolean } {
-  if (!user || user.role === 'admin') return { assistants: true, beneficiaries: true }
-  if (user.role === 'assistant') return { assistants: true, beneficiaries: false }
-  return { assistants: false, beneficiaries: true }
+  // La famille ne reçoit pas les lignes par aidant : elle ignore qui travaille chez les autres.
+  return { assistants: !user || user.role !== 'viewer', beneficiaries: true }
 }
 
 /**
@@ -267,13 +265,25 @@ export async function summariseMonth(month: string, user?: UserFilter): Promise<
   const hourlyRates = new Map(beneficiaryRows.map(row => [row.id, row.hourlyRateCents]))
 
   /**
-   * Le taux horaire n'est chargé que pour qui a l'usage d'un montant : l'admin, qui paie.
-   *
-   * Un lecteur (bénéficiaire ou famille) n'a pas à voir le coût employeur, et un aidant reçoit
-   * ses montants par son export CESU. Le champ est donc ABSENT de son DTO — `undefined` veut
-   * dire « non communiqué », à ne pas confondre avec `null`, « pas encore saisi ».
+   * Le taux horaire est chargé pour qui a l'usage d'un montant : l'admin, qui paie, et
+   * **l'aidant concerné** — c'est ce taux qui compose sa rémunération, et son export CESU le
+   * lui donne déjà. Le champ reste ABSENT pour un lecteur (bénéficiaire ou famille), qui n'a
+   * pas à voir le coût employeur : `undefined` veut dire « non communiqué », à ne pas
+   * confondre avec `null`, « pas encore saisi ».
    */
-  const showRates = !user || user.role === 'admin'
+  const showRates = !user || user.role === 'admin' || user.role === 'assistant'
+
+  /**
+   * Le volume autorisé appartient au BÉNÉFICIAIRE, pas à l'aidant : le solde d'un aidant doit
+   * donc se calculer sur **toutes** les heures du mois, tous aidants confondus. Sans cela, son
+   * « reste 6 h 30 » ignorerait les 5 h d'un collègue, et serait faux.
+   *
+   * On agrège (jamais les passages eux-mêmes, qui restent filtrés par rôle) : un seul chiffre
+   * par bénéficiaire, comme celui que voit la famille.
+   */
+  const consumedByAll = user?.role === 'assistant'
+    ? new Map((await summariseByBeneficiary(await listAppointments({ month }))).map(line => [line.id, line]))
+    : new Map<string, PersonSummary>()
 
   /** Une référence absente reste absente : on n'affiche pas un ratio contre rien. */
   const withReference = (line: PersonSummary, reference: number | null | undefined): SummaryLine => ({
@@ -293,12 +303,24 @@ export async function summariseMonth(month: string, user?: UserFilter): Promise<
 
   const beneficiaryLines = allowed.beneficiaries
     ? summariseByBeneficiary(appointments)
-        .map(line => ({
-          ...withReference(line, authorizedMinutes.get(line.id)),
-          // Champ ABSENT quand le rôle n'y a pas droit : l'écran distingue « non communiqué »
-          // de « pas saisi », sans quoi il écrirait « À saisir » à la place du néant.
-          ...(showRates ? { hourlyRateCents: hourlyRates.get(line.id) ?? null } : {}),
-        }))
+        .map((line) => {
+          // Ce qui consomme le volume autorisé : les heures de tout le monde pour un aidant,
+          // les siennes sinon (sa ligne EST le total).
+          const all = consumedByAll.get(line.id)
+
+          return {
+            ...withReference(line, authorizedMinutes.get(line.id)),
+            // Champ ABSENT quand le rôle n'y a pas droit : l'écran distingue « non communiqué »
+            // de « pas saisi », sans quoi il écrirait « À saisir » à la place du néant.
+            ...(showRates ? { hourlyRateCents: hourlyRates.get(line.id) ?? null } : {}),
+            ...(all
+              ? {
+                  referenceDeclaredMinutes: all.declaredMinutes,
+                  referenceForecastMinutes: forecastMinutes(all),
+                }
+              : {}),
+          }
+        })
     : []
 
   return {

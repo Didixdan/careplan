@@ -32,8 +32,9 @@ describe('API : permissions et statuts', () => {
       .its('status').should('equal', 403)
   })
 
-  it('ne montre à un aidant que ses propres créneaux', () => {
+  it('ne montre à un aidant que ses propres créneaux, avec SES métriques', () => {
     cy.signIn('assistant')
+
     cy.request('/api/appointments/options').then((options) => {
       const me = options.body.assistants[0].name
 
@@ -42,6 +43,34 @@ describe('API : permissions et statuts', () => {
           const all = [appointment.primaryAssistant, ...appointment.coAssistants]
           expect(all).to.include(me)
         }
+      })
+
+      // Son récapitulatif porte les MÊMES métriques que celui de l'admin, sur son périmètre :
+      // ses heures par bénéficiaire, le taux qui compose SON montant, et le volume restant de
+      // la famille (heures de tous les aidants). Un créneau à lui rend le contrôle déterministe :
+      // le mois interrogé contient forcément une de ses lignes.
+      const date = freeDate()
+
+      cy.createFreeAppointment({
+        date, tags: ['Vérif métriques aidant'], status: 'planned',
+        beneficiaryId: options.body.beneficiaries[0].id, primaryAssistantId: options.body.assistants[0].id,
+      }).then(({ id }) => {
+        created.push(id)
+
+        cy.request(`/api/appointments/summary?month=${date.slice(0, 7)}`).then((response) => {
+          const lines = response.body.byBeneficiary as {
+            id: string
+            referenceMinutes: number | null
+            referenceForecastMinutes?: number
+            hourlyRateCents?: number | null
+          }[]
+
+          const line = lines.find(item => item.id === options.body.beneficiaries[0].id)
+
+          expect(line, 'son bénéficiaire apparaît dans ses lignes').to.not.equal(undefined)
+          expect(line!.referenceForecastMinutes, 'volume consommé, tous aidants').to.not.equal(undefined)
+          expect(line!.hourlyRateCents, 'le taux de sa rémunération').to.not.equal(undefined)
+        })
       })
     })
   })

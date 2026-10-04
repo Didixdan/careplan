@@ -226,17 +226,64 @@ export function forecastByBeneficiary(lines: SummaryLine[]): ForecastLine[] {
       amountCents: line.hourlyRateCents === undefined
         ? null
         : amountCents(minutes, line.hourlyRateCents),
-      balanceMinutes: line.referenceMinutes === null ? null : line.referenceMinutes - minutes,
+      // Le volume autorisé appartient au BÉNÉFICIAIRE : quand le serveur fournit les heures de
+      // tous les aidants (ligne d'un aidant, qui ne voit que ses passages), c'est elles qui
+      // consomment le volume. Sinon la ligne est complète, et ses propres heures suffisent.
+      balanceMinutes: line.referenceMinutes === null
+        ? null
+        : line.referenceMinutes - referenceForecastMinutes(line),
     }
   })
 }
 
-/** Ce que le mois entier prévoit : heures, montant, et ce qu'il reste à planifier. */
+/**
+ * Heures réalisées qui consomment le volume autorisé : celles de TOUS les aidants quand le
+ * serveur les fournit (ligne d'un aidant, qui ne voit que ses propres passages), celles de la
+ * ligne sinon (admin, famille : la ligne est complète).
+ */
+export function referenceUsedMinutes(line: SummaryLine): number {
+  return line.referenceDeclaredMinutes ?? line.declaredMinutes
+}
+
+/**
+ * Heures prévisionnelles qui consomment le volume autorisé — même règle que ci-dessus.
+ */
+function referenceForecastMinutes(line: SummaryLine): number {
+  return line.referenceForecastMinutes ?? forecastMinutes(line)
+}
+
+/**
+ * Reste sur le volume autorisé, à la DÉCLARATION : ce qui reste à couvrir pour ce bénéficiaire,
+ * tous aidants confondus. `null` sans volume saisi : on ne compare rien à rien.
+ */
+export function referenceRemaining(line: SummaryLine): number | null {
+  return remainingMinutes({
+    declaredMinutes: referenceUsedMinutes(line),
+    referenceMinutes: line.referenceMinutes,
+  })
+}
+
+/** Le volume autorisé est-il dépassé ? Même règle, appliquée aux heures qui le consomment. */
+export function referenceExceeded(line: SummaryLine): boolean {
+  return exceedsReference({
+    declaredMinutes: referenceUsedMinutes(line),
+    referenceMinutes: line.referenceMinutes,
+  })
+}
+
+/**
+ * Ce qu'un mois entier prévoit, en argent et en solde.
+ *
+ * **Les heures n'y sont pas**, et c'est volontaire : elles se lisent dans les cumuls du mois
+ * (`forecastMinutes`), qui sont complets pour TOUS les rôles. Les additionner ici les ferait
+ * dépendre des lignes par bénéficiaire, or un aidant n'en reçoit aucune
+ * (`totalsAllowed`) — l'écran affichait alors « 0 min » pour un mois à 6 h de prévu.
+ */
 export interface ForecastSummary {
-  forecastMinutes: number
   /**
-   * Montant prévisionnel du mois. `null` dès qu'un taux manque : un total partiel présenté
-   * comme complet finirait sur un virement (même règle que le CSV CESU).
+   * Montant prévisionnel du mois. `null` dès qu'un taux manque, et `null` quand il n'y a
+   * aucune ligne : un total partiel présenté comme complet finirait sur un virement (même
+   * règle que le CSV CESU), et « 0 € » serait un mensonge, pas une absence.
    */
   amountCents: number | null
   /** Bénéficiaires dont le taux manque — explique un montant absent, sans le justifier. */
@@ -254,17 +301,14 @@ export interface ForecastSummary {
 
 /** Agrège les lignes de solde du mois. */
 export function forecastSummary(lines: ForecastLine[]): ForecastSummary {
-  const forecastTotal = lines.reduce((total, line) => total + line.forecastMinutes, 0)
-
   const missingRateCount = lines.filter(line => line.amountCents === null).length
-  const amountTotal = missingRateCount === 0
+  const amountTotal = lines.length > 0 && missingRateCount === 0
     ? lines.reduce((total, line) => total + (line.amountCents ?? 0), 0)
     : null
 
   const balanced = lines.filter(line => line.balanceMinutes !== null)
 
   return {
-    forecastMinutes: forecastTotal,
     amountCents: amountTotal,
     missingRateCount,
     balanceMinutes: balanced.length > 0

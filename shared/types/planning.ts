@@ -133,12 +133,24 @@ export interface SummaryLine extends PersonSummary {
    */
   referenceMinutes: number | null
   /**
+   * Heures DÉCLARÉES qui consomment le volume autorisé de ce bénéficiaire. Présent uniquement
+   * quand la ligne n'est pas complète : un aidant ne voit que ses propres passages, alors que
+   * le volume autorisé appartient au bénéficiaire. Sans ce nombre, son « Reste » serait faux
+   * dès qu'un collègue travaille chez la même personne.
+   *
+   * Absent pour l'admin et pour la famille, dont la ligne EST le total : c'est alors
+   * `declaredMinutes` qui consomme le volume.
+   */
+  referenceDeclaredMinutes?: number
+  /** Idem, en prévisionnel : tout ce qui n'est pas annulé, tous aidants confondus. */
+  referenceForecastMinutes?: number
+  /**
    * Taux horaire du bénéficiaire, en centimes. `null` = pas encore saisi ; **absent** = non
    * communiqué à ce rôle (l'écran ne doit donc pas écrire « À saisir » à sa place).
    *
-   * Rempli **uniquement sur les lignes de bénéficiaire**, et seulement pour qui a l'usage d'un
-   * montant : l'admin. Un aidant reçoit ses montants par son export CESU, et un lecteur
-   * (bénéficiaire ou famille) n'a pas à voir le coût employeur.
+   * Rempli **uniquement sur les lignes de bénéficiaire**, pour qui a l'usage d'un montant :
+   * l'admin, qui paie, et **l'aidant concerné** — c'est le taux qui compose sa rémunération,
+   * il le lit déjà dans son export CESU. Un lecteur (bénéficiaire ou famille) ne le reçoit pas.
    */
   hourlyRateCents?: number | null
   /**

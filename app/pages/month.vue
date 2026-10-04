@@ -42,6 +42,15 @@ const byDay = computed(() => summary.value?.byDay ?? [])
 const beneficiaryForecasts = computed(() => forecastByBeneficiary(byBeneficiary.value))
 const forecast = computed(() => forecastSummary(beneficiaryForecasts.value))
 
+/**
+ * Heures prévisionnelles du mois : tout ce qui n'est pas annulé.
+ *
+ * Elles se lisent dans les CUMULS du mois (`totals`), jamais dans les lignes par bénéficiaire :
+ * un aidant n'en reçoit aucune (pas de total partiel), et la case affichait alors « 0 min »
+ * pour un mois où il avait pourtant 6 h prévues.
+ */
+const forecastTotalMinutes = computed(() => (totals.value ? forecastMinutes(totals.value) : 0))
+
 /** Un bénéficiaire et son solde prévisionnel : les deux se lisent ensemble à l'écran. */
 const beneficiaryCards = computed(() =>
   byBeneficiary.value.map((line, index) => ({ line, forecast: beneficiaryForecasts.value[index]! })),
@@ -65,6 +74,27 @@ const hasForecast = computed(
  * rôle : ainsi une colonne « À saisir » ne s'affiche jamais à la place d'un montant interdit.
  */
 const ratesVisible = computed(() => byBeneficiary.value.some(line => line.hourlyRateCents !== undefined))
+
+/**
+ * La vue est-elle PARTIELLE ? Vrai pour un aidant : le serveur ne lui envoie que SES heures par
+ * bénéficiaire, avec les volumes de référence calculés sur tous les aidants.
+ *
+ * C'est le DTO qui le dit (présence des champs `reference*`) et non l'écran qui devinerait le
+ * rôle : le jour où le serveur change de périmètre, la phrase change avec lui.
+ */
+const partialView = computed(() => byBeneficiary.value.some(line => line.referenceForecastMinutes !== undefined))
+
+/**
+ * Ces deux suffixes disent à QUI se rapportent les nombres d'une carte quand la vue est
+ * partielle. Sur une ligne complète, ils sont vides : rien à qualifier.
+ */
+function ownScope(line: SummaryLine): string {
+  return line.referenceForecastMinutes === undefined ? '' : ' (vos heures)'
+}
+
+function allScope(line: SummaryLine): string {
+  return line.referenceForecastMinutes === undefined ? '' : ' (tous aidants)'
+}
 
 /** Un mois sans créneau du tout, à distinguer d'un mois où rien n'a encore été réalisé. */
 const isEmpty = computed(() => byDay.value.length === 0)
@@ -252,7 +282,9 @@ function assistantContext(line: SummaryLine): string {
             </div>
 
             <div class="synthese__case">
-              <span class="synthese__valeur">{{ formatDuration(forecast.forecastMinutes) }}</span>
+              <!-- Les heures viennent des CUMULS du mois, pas des lignes par bénéficiaire : un
+                   aidant n'en reçoit aucune, et la case affichait alors « 0 min ». -->
+              <span class="synthese__valeur">{{ formatDuration(forecastTotalMinutes) }}</span>
               <span class="synthese__libelle">heures prévisionnelles</span>
             </div>
 
@@ -335,6 +367,17 @@ function assistantContext(line: SummaryLine): string {
             Par bénéficiaire
           </h2>
 
+          <!-- Un aidant ne voit que ses passages : le volume autorisé, lui, appartient au
+               bénéficiaire. La carte décrit donc le volume de la FAMILLE (tous aidants), et ses
+               propres heures apparaissent dessous, en toutes lettres. -->
+          <p
+            v-if="partialView"
+            class="recap__contexte"
+          >
+            Le volume autorisé est celui du bénéficiaire : les barres et les restes comptent tous
+            les aidants. Vos heures et votre montant sont indiqués sous chaque bénéficiaire.
+          </p>
+
           <UiCard
             v-for="card in beneficiaryCards"
             :key="card.line.id"
@@ -345,7 +388,7 @@ function assistantContext(line: SummaryLine): string {
                   {{ card.line.name }}
                 </p>
                 <p class="recap__chiffres">
-                  {{ formatDuration(card.line.declaredMinutes) }}
+                  {{ formatDuration(referenceUsedMinutes(card.line)) }}
                 </p>
               </div>
 
@@ -359,18 +402,18 @@ function assistantContext(line: SummaryLine): string {
                   >
                     <span
                       class="recap__remplissage"
-                      :class="{ 'recap__remplissage--depassement': exceedsReference(card.line) }"
-                      :style="{ width: `${durationProportion(card.line.declaredMinutes, card.line.referenceMinutes)}%` }"
+                      :class="{ 'recap__remplissage--depassement': referenceExceeded(card.line) }"
+                      :style="{ width: `${durationProportion(referenceUsedMinutes(card.line), card.line.referenceMinutes)}%` }"
                     />
                   </span>
                   <span class="recap__chiffres">sur {{ formatDuration(card.line.referenceMinutes) }}</span>
                 </div>
-                <p :class="exceedsReference(card.line) ? 'recap__depassement' : 'recap__contexte'">
-                  <template v-if="exceedsReference(card.line)">
-                    Dépassement de {{ formatDuration(Math.abs(remainingMinutes(card.line) ?? 0)) }}
+                <p :class="referenceExceeded(card.line) ? 'recap__depassement' : 'recap__contexte'">
+                  <template v-if="referenceExceeded(card.line)">
+                    Dépassement de {{ formatDuration(Math.abs(referenceRemaining(card.line) ?? 0)) }}
                   </template>
                   <template v-else>
-                    Reste {{ formatDuration(remainingMinutes(card.line)) }}
+                    Reste {{ formatDuration(referenceRemaining(card.line)) }}
                   </template>
                 </p>
               </template>
@@ -385,11 +428,15 @@ function assistantContext(line: SummaryLine): string {
 
               <!-- Prévisionnel de CE bénéficiaire, à SON taux. Le solde d'ici est celui d'APRÈS
                    prévisionnel : le « Reste » ci-dessus ne parle que du réalisé, donc de la
-                   déclaration. Les deux se complètent, ils ne se répètent pas. -->
+                   déclaration. Les deux se complètent, ils ne se répètent pas.
+                   Quand la ligne n'est pas complète (un aidant ne voit que ses passages), les
+                   deux nombres viennent de sources différentes : on le DIT, plutôt que de
+                   laisser croire qu'ils se rapportent au même périmètre. -->
               <template v-if="card.forecast.forecastMinutes > card.line.declaredMinutes">
                 <p class="recap__contexte">
-                  Prévisionnel {{ formatDuration(card.forecast.forecastMinutes) }}
-                  <template v-if="card.forecast.amountCents !== null">
+                  Prévisionnel {{ formatDuration(card.forecast.forecastMinutes) }}{{ ownScope(card.line) }}<template
+                    v-if="card.forecast.amountCents !== null"
+                  >
                     · {{ formatEuros(card.forecast.amountCents) }}
                   </template>
                 </p>
@@ -399,10 +446,11 @@ function assistantContext(line: SummaryLine): string {
                   :class="card.forecast.balanceMinutes < 0 ? 'recap__depassement' : 'recap__contexte'"
                 >
                   <template v-if="card.forecast.balanceMinutes < 0">
-                    Dépassement de {{ formatDuration(Math.abs(card.forecast.balanceMinutes)) }} après prévisionnel
+                    Dépassement de {{ formatDuration(Math.abs(card.forecast.balanceMinutes)) }} après
+                    prévisionnel{{ allScope(card.line) }}
                   </template>
                   <template v-else>
-                    Après prévisionnel : reste {{ formatDuration(card.forecast.balanceMinutes) }}
+                    Après prévisionnel{{ allScope(card.line) }} : reste {{ formatDuration(card.forecast.balanceMinutes) }}
                   </template>
                 </p>
               </template>
