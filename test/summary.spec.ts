@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Appointment, Status, SummaryLine } from '~~/shared/types/planning'
+import type { Appointment, Status, SummaryLine, WeekIncomeLine } from '~~/shared/types/planning'
 import { durationInMinutes } from '~/utils/duration'
 import {
   DECLARED_STATUSES,
@@ -7,6 +7,8 @@ import {
   forecastByBeneficiary,
   forecastMinutes,
   forecastSummary,
+  incomeGroups,
+  incomeTotals,
   referenceExceeded,
   referenceRemaining,
   remainingMinutes,
@@ -14,6 +16,8 @@ import {
   summariseByAssistant,
   summariseByBeneficiary,
   summariseByDay,
+  summariseByPair,
+  toIncomeLine,
 } from '~/utils/summary'
 
 /**
@@ -34,7 +38,8 @@ interface Options {
   assistant?: string
   beneficiaryId?: string
   beneficiary?: string
-  color?: Appointment['color']
+  assistantColor?: Appointment['assistantColor']
+  beneficiaryColor?: Appointment['beneficiaryColor']
   coAssistantIds?: string[]
   coAssistants?: string[]
 }
@@ -51,7 +56,8 @@ function appointment(options: Options = {}): Appointment {
     beneficiaryId: options.beneficiaryId ?? 'benef-1',
     primaryAssistant: options.assistant ?? 'Camille Roussel',
     primaryAssistantId: options.assistantId ?? 'assist-1',
-    color: options.color ?? 'assistant-5',
+    assistantColor: options.assistantColor ?? 'assistant-5',
+    beneficiaryColor: options.beneficiaryColor ?? null,
     coAssistants: options.coAssistants ?? [],
     coAssistantIds: options.coAssistantIds ?? [],
   }
@@ -216,6 +222,18 @@ describe('summariseByBeneficiary', () => {
     expect(lines).toHaveLength(1)
     expect(lines[0]?.declaredMinutes).toBe(240)
     expect(lines[0]?.color).toBeUndefined()
+  })
+
+  it('porte la couleur du bénéficiaire sur sa ligne, et rien quand il n\'en a pas', () => {
+    // Une ligne parle d'une seule personne : elle porte donc SA couleur. Le `null` du
+    // bénéficiaire sans couleur devient une ligne sans rail, jamais une teinte inventée.
+    const lines = summariseByBeneficiary([
+      appointment({ beneficiaryId: 'benef-1', beneficiary: 'Élise Dupont', beneficiaryColor: 'assistant-6' }),
+      appointment({ beneficiaryId: 'benef-2', beneficiary: 'Robert Bernard', start: '14:00', end: '15:00' }),
+    ])
+
+    expect(lines[0]?.color).toBe('assistant-6')
+    expect(lines[1]?.color).toBeUndefined()
   })
 
   it('sépare deux bénéficiaires et trie par nom', () => {
@@ -454,5 +472,241 @@ describe('forecastSummary', () => {
 
     expect(summary.exceededCount).toBe(1)
     expect(summary.balanceMinutes).toBe(-60)
+  })
+})
+
+/**
+ * Une ligne de revenu, à zéro : chaque test ne remplit que ce qu'il interroge. Le taux est
+ * `null` par défaut — « pas encore saisi » est le cas qu'on oublie de traiter.
+ */
+function incomeLine(overrides: Partial<WeekIncomeLine> = {}): WeekIncomeLine {
+  return {
+    assistantId: 'assist-1',
+    assistantName: 'Camille Roussel',
+    assistantColor: 'assistant-5',
+    beneficiaryId: 'benef-1',
+    beneficiaryName: 'Élise Dupont',
+    beneficiaryColor: 'assistant-7',
+    declaredMinutes: 0,
+    toValidateMinutes: 0,
+    plannedMinutes: 0,
+    minutes: 0,
+    passages: 0,
+    toValidatePassages: 0,
+    hourlyRateCents: null,
+    amountCents: null,
+    declaredAmountCents: null,
+    ...overrides,
+  }
+}
+
+describe('summariseByPair', () => {
+  it('crédite les DEUX aidants d\'un binôme, et le bénéficiaire une seule fois', () => {
+    const pairs = summariseByPair([
+      appointment({
+        start: '09:00',
+        end: '11:00',
+        coAssistantIds: ['assist-2'],
+        coAssistants: ['Damien Martin'],
+      }),
+    ])
+
+    expect(pairs.map(pair => pair.assistantId)).toEqual(['assist-1', 'assist-2'])
+    // Chacun déclare les heures qu'il a faites : deux lignes de 120 min pour UNE plage.
+    expect(pairs.map(pair => pair.declaredMinutes)).toEqual([120, 120])
+    // Le bénéficiaire, lui, n'est compté qu'une fois.
+    expect(new Set(pairs.map(pair => pair.beneficiaryId)).size).toBe(1)
+  })
+
+  it('crée une ligne PAR bénéficiaire, à son taux, pour un même aidant', () => {
+    const pairs = summariseByPair([
+      appointment({ start: '09:00', end: '10:00' }),
+      appointment({ start: '14:00', end: '15:30', beneficiaryId: 'benef-2', beneficiary: 'Robert Bernard' }),
+    ])
+
+    expect(pairs.map(pair => [pair.beneficiaryId, pair.declaredMinutes])).toEqual([
+      ['benef-1', 60],
+      ['benef-2', 90],
+    ])
+  })
+
+  it('porte la couleur de chaque personne, et aucune pour un co-aidant', () => {
+    const pairs = summariseByPair([
+      appointment({ beneficiaryColor: 'assistant-7', coAssistantIds: ['assist-2'], coAssistants: ['Damien Martin'] }),
+    ])
+
+    expect(pairs[0]).toMatchObject({ assistantColor: 'assistant-5', beneficiaryColor: 'assistant-7' })
+    // Le DTO ne transporte jamais la couleur d'un co-aidant : sa ligne n'a donc aucun rail.
+    expect(pairs[1]!.assistantColor).toBeUndefined()
+  })
+
+  it('écarte un couple dont tous les créneaux sont annulés', () => {
+    // Un revenu à 0 € n'est pas une information : c'est du bruit dans un tableau de bord.
+    expect(summariseByPair([appointment({ status: 'cancelled' })])).toEqual([])
+  })
+
+  it('range « à vérifier » et « prévu » dans le prévisionnel, hors du réalisé', () => {
+    const pairs = summariseByPair([
+      appointment({ start: '08:00', end: '09:00', status: 'completed' }),
+      appointment({ start: '10:00', end: '11:00', status: 'to_validate' }),
+      appointment({ start: '12:00', end: '13:00', status: 'planned' }),
+    ])
+
+    expect(pairs[0]).toMatchObject({
+      declaredMinutes: 60,
+      toValidateMinutes: 60,
+      plannedMinutes: 60,
+      passages: 1,
+      toValidatePassages: 1,
+    })
+  })
+
+  it('trie par aidant puis par bénéficiaire', () => {
+    const pairs = summariseByPair([
+      appointment({ assistantId: 'assist-2', assistant: 'Zoé Adam', beneficiaryId: 'benef-2', beneficiary: 'Bernard' }),
+      appointment({ assistantId: 'assist-1', assistant: 'Zoé Adam', beneficiaryId: 'benef-1', beneficiary: 'Albert' }),
+      appointment({ assistantId: 'assist-3', assistant: 'Alice Colin', beneficiaryId: 'benef-1', beneficiary: 'Albert' }),
+    ])
+
+    expect(pairs.map(pair => `${pair.assistantName}/${pair.beneficiaryName}`)).toEqual([
+      'Alice Colin/Albert',
+      'Zoé Adam/Albert',
+      'Zoé Adam/Bernard',
+    ])
+  })
+
+  it('ne compte qu\'une fois un aidant principal aussi co-assistant de son créneau', () => {
+    const pairs = summariseByPair([
+      appointment({ coAssistantIds: ['assist-1'], coAssistants: ['Camille Roussel'] }),
+    ])
+
+    expect(pairs).toHaveLength(1)
+    expect(pairs[0]!.declaredMinutes).toBe(60)
+  })
+})
+
+describe('toIncomeLine', () => {
+  const pair = summariseByPair([
+    appointment({ start: '09:00', end: '10:00', status: 'completed' }),
+    appointment({ start: '14:00', end: '15:00', status: 'to_validate' }),
+    appointment({ start: '16:00', end: '17:00', status: 'planned' }),
+    appointment({ start: '18:00', end: '19:00', status: 'cancelled' }),
+  ])[0]!
+
+  it('porte les heures PRÉVISIONNELLES du couple, annulés exclus', () => {
+    // 1 h réalisée + 1 h à vérifier + 1 h prévue ; l'annulé ne compte pas.
+    expect(toIncomeLine(pair, null).minutes).toBe(180)
+  })
+
+  it('chiffre le prévisionnel et le réalisé au taux du bénéficiaire', () => {
+    const line = toIncomeLine(pair, 2000)
+
+    expect(line.hourlyRateCents).toBe(2000)
+    expect(line.amountCents).toBe(6000) // 3 h × 20,00 €/h
+    expect(line.declaredAmountCents).toBe(2000) // 1 h réalisée
+  })
+
+  it('n\'invente aucun montant sans taux, et distingue « non saisi » de « non communiqué »', () => {
+    // `null` : le taux n'est pas saisi — le champ EXISTE, et l'écran écrit « À saisir ».
+    const missing = toIncomeLine(pair, null)
+    expect(missing.hourlyRateCents).toBeNull()
+    expect(missing.amountCents).toBeNull()
+
+    // `undefined` : le taux n'est pas communiqué à ce rôle — le champ DISPARAÎT, donc l'écran
+    // masque le bloc au lieu d'annoncer un montant qu'il n'a pas le droit de montrer.
+    const hidden = toIncomeLine(pair)
+    expect(Object.keys(hidden)).not.to.include('hourlyRateCents')
+    expect(hidden.amountCents).toBeNull()
+    expect(hidden.declaredAmountCents).toBeNull()
+  })
+})
+
+describe('incomeTotals', () => {
+  it('additionne les lignes quand tous les taux sont saisis', () => {
+    const totals = incomeTotals([
+      incomeLine({ hourlyRateCents: 3875, amountCents: 3875, declaredMinutes: 60, declaredAmountCents: 3875 }),
+      incomeLine({ beneficiaryId: 'benef-2', hourlyRateCents: 2000, amountCents: 3000, toValidateMinutes: 90 }),
+    ])
+
+    expect(totals).toEqual({ amountCents: 6875, declaredAmountCents: 3875, missingRateCount: 0 })
+  })
+
+  it('ne présente JAMAIS un total partiel : un taux non saisi rend le montant `null`', () => {
+    const totals = incomeTotals([
+      incomeLine({ hourlyRateCents: 3875, amountCents: 3875 }),
+      incomeLine({ beneficiaryId: 'benef-2', hourlyRateCents: null }),
+    ])
+
+    expect(totals.amountCents).toBeNull()
+    expect(totals.missingRateCount).toBe(1)
+  })
+
+  it('ne compte pas un taux NON COMMUNIQUÉ comme manquant', () => {
+    // Un lecteur ne reçoit pas le champ : il n'y a aucun montant à annoncer, mais rien de
+    // « manquant » non plus — sinon l'écran écrirait « À saisir » là où il n'a pas le droit
+    // de montrer un montant.
+    const totals = incomeTotals([incomeLine({ hourlyRateCents: undefined })])
+
+    expect(totals.amountCents).toBeNull()
+    expect(totals.missingRateCount).toBe(0)
+  })
+
+  it('dit « rien de réalisé » (0 €), et non « montant inconnu », quand rien n\'est fait', () => {
+    const totals = incomeTotals([incomeLine({ hourlyRateCents: 3875, amountCents: 3875, plannedMinutes: 60 })])
+
+    expect(totals.amountCents).toBe(3875)
+    expect(totals.declaredAmountCents).toBe(0)
+  })
+
+  it('laisse le réalisé chiffré même si une ligne ENCORE PRÉVUE manque un taux', () => {
+    const totals = incomeTotals([
+      incomeLine({ hourlyRateCents: 3875, amountCents: 3875, declaredMinutes: 60, declaredAmountCents: 3875 }),
+      incomeLine({ beneficiaryId: 'benef-2', hourlyRateCents: null, plannedMinutes: 60 }),
+    ])
+
+    expect(totals.amountCents).toBeNull()
+    expect(totals.declaredAmountCents).toBe(3875)
+  })
+
+  it('rend le réalisé `null` si une ligne RÉALISÉE manque un taux', () => {
+    const totals = incomeTotals([
+      incomeLine({ hourlyRateCents: null, declaredMinutes: 60, declaredAmountCents: null }),
+    ])
+
+    expect(totals.declaredAmountCents).toBeNull()
+  })
+
+  it('ne dit rien d\'une liste vide', () => {
+    expect(incomeTotals([])).toEqual({ amountCents: null, declaredAmountCents: 0, missingRateCount: 0 })
+  })
+})
+
+describe('incomeGroups', () => {
+  it('groupe par aidant en gardant l\'ordre reçu', () => {
+    const groups = incomeGroups([
+      incomeLine({ minutes: 60, hourlyRateCents: 3875, amountCents: 3875, declaredMinutes: 60, declaredAmountCents: 3875 }),
+      incomeLine({ beneficiaryId: 'benef-2', minutes: 60, hourlyRateCents: 2000, amountCents: 2000, plannedMinutes: 60 }),
+      incomeLine({ assistantId: 'assist-2', assistantName: 'Damien Martin', minutes: 60, hourlyRateCents: 1000, amountCents: 1000, plannedMinutes: 60 }),
+    ])
+
+    expect(groups.map(group => group.assistantName)).toEqual(['Camille Roussel', 'Damien Martin'])
+    expect(groups[0]!.lines).toHaveLength(2)
+    expect(groups[0]!.amountCents).toBe(5875)
+    expect(groups[0]!.minutes).toBe(120)
+    expect(groups[0]!.declaredMinutes).toBe(60)
+  })
+
+  it('rend le sous-total d\'un aidant `null` dès qu\'une de ses lignes manque un taux', () => {
+    const groups = incomeGroups([
+      incomeLine({ hourlyRateCents: 3875, amountCents: 3875 }),
+      incomeLine({ beneficiaryId: 'benef-2', hourlyRateCents: null, plannedMinutes: 60 }),
+    ])
+
+    expect(groups[0]!.amountCents).toBeNull()
+    expect(groups[0]!.missingRateCount).toBe(1)
+  })
+
+  it('ne renvoie aucun groupe pour aucune ligne', () => {
+    expect(incomeGroups([])).toEqual([])
   })
 })

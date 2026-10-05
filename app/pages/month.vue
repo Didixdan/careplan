@@ -254,7 +254,7 @@ function assistantContext(line: SummaryLine): string {
         <template #action>
           <UiButton
             variant="primary"
-            @click="navigateTo('/')"
+            @click="navigateTo('/day')"
           >
             Ouvrir le planning
           </UiButton>
@@ -341,7 +341,7 @@ function assistantContext(line: SummaryLine): string {
             v-for="line in byAssistant"
             :key="line.id"
             :railed="Boolean(line.color)"
-            :style="line.color ? { borderLeftColor: `var(--color-${line.color})` } : undefined"
+            :style="line.color ? { borderLeftColor: colorVariable(line.color) } : undefined"
           >
             <div class="card__body recap__ligne">
               <div class="flex items-baseline justify-between gap-2">
@@ -378,9 +378,13 @@ function assistantContext(line: SummaryLine): string {
             les aidants. Vos heures et votre montant sont indiqués sous chaque bénéficiaire.
           </p>
 
+          <!-- Le rail gauche porte la couleur du BÉNÉFICIAIRE : une ligne parle d'une seule
+               personne, donc elle a un seul rail — celui du nom qu'elle affiche. -->
           <UiCard
             v-for="card in beneficiaryCards"
             :key="card.line.id"
+            :railed="Boolean(card.line.color)"
+            :style="card.line.color ? { borderLeftColor: colorVariable(card.line.color) } : undefined"
           >
             <div class="card__body recap__ligne">
               <div class="flex items-baseline justify-between gap-2">

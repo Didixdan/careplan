@@ -119,7 +119,7 @@ describe('Tags : écran', () => {
 
     cy.request({ method: 'POST', url: '/api/tags', body: { name: 'Vérif suggestion' } })
 
-    cy.visit('/')
+    cy.visit('/day')
     cy.get('[aria-label="Nouveau créneau"]').click()
     cy.get('#appointment-beneficiary').select(1)
 
@@ -163,7 +163,7 @@ describe('Tags : écran', () => {
       }).then(({ id }) => {
         created.push(id)
 
-        cy.visit('/')
+        cy.visit('/day')
         revealCard('Vérif 1')
 
         cy.contains('.creneau-horaire', 'Vérif 1').within(() => {
@@ -194,7 +194,7 @@ describe('Tags : écran', () => {
 
         cy.contains('.card', 'Vérif après renommage').should('be.visible')
 
-        cy.visit('/')
+        cy.visit('/day')
         cy.contains('.creneau-horaire', 'Vérif après renommage').should('be.visible')
         cy.contains('Vérif avant renommage').should('not.exist')
       })
@@ -210,7 +210,7 @@ describe('Tags : écran', () => {
     cy.request({ method: 'POST', url: '/api/tags', body: { name: 'Vérif alpha existant' } })
     cy.request({ method: 'POST', url: '/api/tags', body: { name: 'Vérif beta existant' } })
 
-    cy.visit('/')
+    cy.visit('/day')
     cy.get('[aria-label="Nouveau créneau"]').click()
     cy.get('#appointment-beneficiary').select(1)
 

@@ -1,4 +1,14 @@
-import type { Appointment, DaySummary, PersonSummary, SummaryLine, SummaryTotals } from '~~/shared/types/planning'
+import type {
+  Appointment,
+  DaySummary,
+  IncomeGroup,
+  IncomeTotals,
+  PairSummary,
+  PersonSummary,
+  SummaryLine,
+  SummaryTotals,
+  WeekIncomeLine,
+} from '~~/shared/types/planning'
 import type { AssistantColor } from './colors'
 import type { CivilDate } from './date'
 import { durationInMinutes } from './duration'
@@ -81,7 +91,7 @@ function participants(appointment: Appointment): Participant[] {
   }))
 
   return [
-    { id: appointment.primaryAssistantId, name: appointment.primaryAssistant, color: appointment.color },
+    { id: appointment.primaryAssistantId, name: appointment.primaryAssistant, color: appointment.assistantColor },
     ...coAssistants,
   ]
 }
@@ -132,11 +142,16 @@ export function summariseByAssistant(appointments: Appointment[]): PersonSummary
 /**
  * Cumuls par bénéficiaire. Un créneau a UN bénéficiaire, et il est compté UNE fois : le
  * volume d'heures autorisé n'est pas une réserve qu'un binôme consommerait deux fois.
+ *
+ * La couleur remonte AVEC le cumul : une ligne parle d'une personne, donc elle porte « sa »
+ * couleur — celle du bénéficiaire ici, celle de l'aidant dans `summariseByAssistant`. Le
+ * `?? undefined` est là où `null` (« aucune couleur ») devient « ligne sans rail ».
  */
 export function summariseByBeneficiary(appointments: Appointment[]): PersonSummary[] {
   return groupByPeople(appointments, appointment => [{
     id: appointment.beneficiaryId,
     name: appointment.beneficiary,
+    color: appointment.beneficiaryColor ?? undefined,
   }])
 }
 
@@ -156,6 +171,58 @@ export function summariseByDay(appointments: Appointment[]): DaySummary[] {
   }
 
   return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date))
+}
+
+/**
+ * Cumuls par couple aidant × bénéficiaire : c'est la maille d'un MONTANT, car un aidant qui
+ * travaille chez deux bénéficiaires a deux lignes, chacune à son taux.
+ *
+ * Un binôme crédite les DEUX aidants (chacun déclare les heures qu'il a faites), le bénéficiaire
+ * reste unique. Les couleurs suivent la personne citée, comme dans `summariseByAssistant` et
+ * `summariseByBeneficiary`.
+ *
+ * Une ligne n'est produite que si elle porte des minutes PRÉVISIONNELLES : un couple dont tous
+ * les créneaux sont annulés (ou de durée inexploitable) n'a ni heures ni montant, donc rien à
+ * montrer dans un revenu. C'est la seule différence avec `groupByPeople`, qui garde les lignes à
+ * zéro pour dire « rien ce mois-ci ».
+ */
+export function summariseByPair(appointments: Appointment[]): PairSummary[] {
+  const byId = new Map<string, PairSummary>()
+
+  for (const appointment of appointments) {
+    // Une même personne ne compte qu'une fois par créneau : le schéma autorise théoriquement un
+    // aidant principal aussi co-assistant de son propre créneau.
+    const seen = new Set<string>()
+
+    for (const person of participants(appointment)) {
+      if (seen.has(person.id)) continue
+      seen.add(person.id)
+
+      const key = `${person.id}|${appointment.beneficiaryId}`
+      let line = byId.get(key)
+      if (!line) {
+        line = {
+          assistantId: person.id,
+          assistantName: person.name,
+          assistantColor: person.color,
+          beneficiaryId: appointment.beneficiaryId,
+          beneficiaryName: appointment.beneficiary,
+          beneficiaryColor: appointment.beneficiaryColor ?? undefined,
+          ...emptyTotals(),
+        }
+        byId.set(key, line)
+      }
+
+      addAppointment(line, appointment)
+    }
+  }
+
+  return [...byId.values()]
+    .filter(line => forecastMinutes(line) > 0)
+    .sort(
+      (a, b) => a.assistantName.localeCompare(b.assistantName, 'fr')
+        || a.beneficiaryName.localeCompare(b.beneficiaryName, 'fr'),
+    )
 }
 
 /** Ce qu'il faut pour confronter un cumul à une référence contractuelle. */
@@ -317,4 +384,96 @@ export function forecastSummary(lines: ForecastLine[]): ForecastSummary {
     withoutVolumeCount: lines.length - balanced.length,
     exceededCount: balanced.filter(line => (line.balanceMinutes ?? 0) < 0).length,
   }
+}
+
+/** Une ligne de revenu est-elle chiffrable ? `undefined` = taux non communiqué à ce rôle. */
+function isPriced(line: WeekIncomeLine): boolean {
+  return line.hourlyRateCents !== undefined && line.hourlyRateCents !== null
+}
+
+/**
+ * Une ligne de revenu : le cumul d'un couple, ses heures prévisionnelles, et ses montants au taux
+ * du bénéficiaire.
+ *
+ * `hourlyRateCents` **absent** (`undefined`) veut dire « non communiqué à ce rôle » : le champ
+ * disparaît alors du DTO, et l'écran masque le bloc au lieu d'écrire « À saisir ». `null` veut
+ * dire « pas encore saisi ». Les deux rendent un montant `null`, mais ils ne se disent pas de la
+ * même façon — c'est toute la différence entre « je ne dois pas le montrer » et « il manque ».
+ */
+export function toIncomeLine(pair: PairSummary, hourlyRateCents?: number | null): WeekIncomeLine {
+  const minutes = forecastMinutes(pair)
+  const rate = hourlyRateCents ?? null
+
+  return {
+    ...pair,
+    minutes,
+    ...(hourlyRateCents === undefined ? {} : { hourlyRateCents }),
+    amountCents: amountCents(minutes, rate),
+    declaredAmountCents: amountCents(pair.declaredMinutes, rate),
+  }
+}
+
+/**
+ * Agrège des lignes de revenu — la règle commune au sous-total d'un aidant et au total de la
+ * semaine.
+ *
+ * **Un total partiel n'est jamais présenté comme complet** : dès qu'une ligne a un taux `null`
+ * (« pas encore saisi »), le montant vaut `null` et `missingRateCount` dit combien de taux
+ * manquent. Un taux **absent** du DTO (« non communiqué à ce rôle ») n'est pas un taux manquant :
+ * il n'y a simplement aucun montant à annoncer, et l'écran masque le bloc.
+ *
+ * Le réalisé n'est compté que sur les lignes qui ont des heures réalisées : une ligne encore
+ * prévue sans taux ne rend pas faux le montant DÉJÀ gagné. Sans aucune heure réalisée, c'est
+ * zéro — « rien de fait », jamais « montant inconnu ».
+ */
+export function incomeTotals(lines: WeekIncomeLine[]): IncomeTotals {
+  const missingRateCount = lines.filter(line => line.hourlyRateCents === null).length
+  const priced = lines.filter(isPriced)
+
+  const declared = lines.filter(line => line.declaredMinutes > 0)
+  const declaredPriced = declared.filter(isPriced)
+  const declaredAmountCents = declared.length === 0
+    ? 0
+    : declaredPriced.length < declared.length
+      ? null
+      : declaredPriced.reduce((total, line) => total + (line.declaredAmountCents ?? 0), 0)
+
+  return {
+    amountCents: lines.length > 0 && priced.length === lines.length
+      ? priced.reduce((total, line) => total + (line.amountCents ?? 0), 0)
+      : null,
+    declaredAmountCents,
+    missingRateCount,
+  }
+}
+
+/**
+ * Regroupe les lignes de revenu par aidant : un aidant, ses bénéficiaires, son sous-total.
+ *
+ * L'ordre d'entrée est conservé (déjà trié par aidant puis bénéficiaire, donc l'alphabet est
+ * respecté sans retrier), et les sous-totaux passent par `incomeTotals` : la règle « À saisir »
+ * est donc la même ligne à ligne et groupe par groupe. Deux implémentations finiraient par
+ * diverger, et la divergence serait un montant.
+ */
+export function incomeGroups(lines: WeekIncomeLine[]): IncomeGroup[] {
+  const byId = new Map<string, WeekIncomeLine[]>()
+
+  for (const line of lines) {
+    byId.set(line.assistantId, [...(byId.get(line.assistantId) ?? []), line])
+  }
+
+  return [...byId.values()].map((group) => {
+    const first = group[0]!
+    const totals = incomeTotals(group)
+
+    return {
+      assistantId: first.assistantId,
+      assistantName: first.assistantName,
+      assistantColor: first.assistantColor,
+      lines: group,
+      minutes: group.reduce((total, line) => total + line.minutes, 0),
+      declaredMinutes: group.reduce((total, line) => total + line.declaredMinutes, 0),
+      ...totals,
+    }
+  })
 }

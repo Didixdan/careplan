@@ -19,6 +19,9 @@ const lastName = ref('')
 const address = ref('')
 const hourlyRate = ref<number | null>(null)
 const monthlyHours = ref<number | null>(null)
+// FACULTATIVE : `null` est la valeur par défaut, à la différence de l'écran des aidants qui
+// pré-remplit une teinte. C'est ce `null` qui produit « aucun marquage » au calendrier.
+const color = ref<AssistantColor | null>(null)
 const message = ref('')
 
 function openCreate() {
@@ -29,6 +32,7 @@ function openCreate() {
   address.value = ''
   hourlyRate.value = null
   monthlyHours.value = null
+  color.value = null
   message.value = ''
 }
 
@@ -40,6 +44,7 @@ function openEdit(beneficiary: Beneficiary) {
   address.value = beneficiary.address ?? ''
   hourlyRate.value = beneficiary.hourlyRateCents !== null ? beneficiary.hourlyRateCents / 100 : null
   monthlyHours.value = beneficiary.authorizedMinutesMonth !== null ? beneficiary.authorizedMinutesMonth / 60 : null
+  color.value = beneficiary.color
   message.value = ''
 }
 
@@ -49,6 +54,7 @@ const formBody = computed(() => ({
   address: address.value.trim() || null,
   hourlyRateCents: centsFromEuros(hourlyRate.value),
   authorizedMinutesMonth: monthlyHours.value !== null && monthlyHours.value > 0 ? monthlyHours.value * 60 : null,
+  color: color.value,
 }))
 
 async function save() {
@@ -143,6 +149,44 @@ useHead({ title: 'CarePlan — bénéficiaires' })
         <div class="field">
           <label
             class="field__label"
+            for="color"
+          >Couleur (optionnel)</label>
+          <div class="couleur-select">
+            <select
+              id="color"
+              v-model="color"
+              aria-label="Couleur du bénéficiaire"
+            >
+              <option :value="null">
+                Aucune couleur
+              </option>
+              <option
+                v-for="c in ASSISTANT_COLORS"
+                :key="c"
+                :value="c"
+              >
+                {{ ASSISTANT_COLOR_LABELS[c] }}
+              </option>
+            </select>
+            <span class="couleur-select__display">
+              <!-- Sans couleur, la pastille garde sa seule bordure : c'est l'état du contrôle,
+                   pas un marquage. Le libellé dit la même chose en toutes lettres. -->
+              <span
+                class="couleur-select__swatch"
+                :style="color ? { backgroundColor: colorVariable(color) } : undefined"
+                aria-hidden="true"
+              />
+              {{ color ? ASSISTANT_COLOR_LABELS[color] : 'Aucune couleur' }}
+            </span>
+          </div>
+          <p class="field__hint">
+            Elle colore le rail droit des créneaux de ce bénéficiaire, dans le planning.
+          </p>
+        </div>
+
+        <div class="field">
+          <label
+            class="field__label"
             for="address"
           >Adresse</label>
           <input
@@ -215,8 +259,16 @@ useHead({ title: 'CarePlan — bénéficiaires' })
       >
         <div class="card__body flex items-center justify-between gap-3">
           <div class="min-w-0">
-            <p class="card__title truncate">
-              {{ beneficiary.firstName }} {{ beneficiary.lastName }}
+            <!-- La pastille n'apparaît QUE s'il y a une couleur : « aucune couleur » se lit
+                 comme une absence, jamais comme un marquage neutre. -->
+            <p class="card__title flex items-center gap-2">
+              <span
+                v-if="beneficiary.color"
+                class="couleur-select__swatch"
+                :style="{ backgroundColor: colorVariable(beneficiary.color) }"
+                aria-hidden="true"
+              />
+              <span class="truncate">{{ beneficiary.firstName }} {{ beneficiary.lastName }}</span>
             </p>
             <p
               v-if="beneficiary.address"

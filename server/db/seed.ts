@@ -16,12 +16,12 @@ catch {
 }
 
 // Mot de passe de développement, commun aux comptes de démonstration (aidants + lecture).
-const DEV_PASSWORD = 'quZx$%A7'
+const DEV_PASSWORD = 'careplan'
 
 // Compte d'administration. Ces deux valeurs sont aussi celles des scénarios de bout en bout
 // (`cypress/support/e2e.ts`) : les changer ici oblige à les changer là-bas.
-const ADMIN_EMAIL = 'admin@careplan.prod'
-const ADMIN_PASSWORD = '@59y%P#5'
+const ADMIN_EMAIL = 'admin@careplan.local'
+const ADMIN_PASSWORD = 'careplan'
 
 /** Récupère l'unique ligne d'une insertion `.returning(...)`, en échouant sinon. */
 async function one<T>(rows: Promise<T[]>): Promise<T> {
@@ -79,6 +79,7 @@ async function seed() {
       firstName: reference.firstName,
       lastName: reference.lastName,
       hourlyRateCents: reference.hourlyRateCents,
+      color: reference.color,
     }).returning({ id: beneficiaries.id }))
 
     beneficiaryBySlug.set(reference.slug, beneficiary.id)

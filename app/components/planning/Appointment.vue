@@ -4,8 +4,8 @@ import type { Status, TagOption } from '~~/shared/types/planning'
 /**
  * Heures en colonne de largeur fixe (l'œil descend la colonne), durée en barre
  * proportionnelle — mais toujours écrite à côté : la longueur ne porte jamais seule
- * l'information. La couleur de l'aidant principal est un rail pleine hauteur, pas un
- * fond teinté.
+ * l'information. La couleur de l'aidant principal remplit la barre de durée ; celle du
+ * bénéficiaire est un rail à DROITE, pleine hauteur.
  *
  * Le titre est le BÉNÉFICIAIRE ; les tags disent l'acte. Cette carte vit dans le flux (bloc
  * « Nuit », liste), donc elle s'allonge : elle montre TOUS les tags, sans « +N ».
@@ -17,9 +17,14 @@ const props = withDefaults(
     beneficiary: string
     /** Tags du créneau, dans l'ordre : tous affichés sur cette carte. */
     tags?: TagOption[]
-    /** Aidant principal : affiché et porteur de la couleur du rail. */
+    /** Aidant principal : affiché et porteur de la couleur de la barre de durée. */
     primaryAssistant: string
-    color: AssistantColor
+    assistantColor: AssistantColor
+    /**
+     * Bénéficiaire : porteur du rail de droite. `null` = aucune couleur, donc aucun rail —
+     * la carte ne pose alors aucune variable, et rien n'est inventé.
+     */
+    beneficiaryColor?: AssistantColor | null
     coAssistants?: string[]
     status?: Status
     durationReference?: number
@@ -29,6 +34,7 @@ const props = withDefaults(
   }>(),
   {
     tags: () => [],
+    beneficiaryColor: null,
     coAssistants: () => [],
     status: 'planned',
     // 4 h : au-delà la barre sature. C'est une échelle de lecture, pas une mesure.
@@ -62,12 +68,13 @@ const classes = computed(() => [
 
 /** Portée par l'élément du rail : le CSS en dérive toutes les couleurs. */
 const colorStyle = computed(() => ({
-  '--creneau-couleur': `var(--color-${props.color})`,
+  '--creneau-couleur-aidant': colorVariable(props.assistantColor),
+  ...beneficiaryRailStyle(props.beneficiaryColor),
 }))
 
-// Le badge porte le statut, le rail porte l'aidant : deux codes distincts. Les libellés et
-// tonalités viennent de `app/utils/status.ts`, partagés avec la grille horaire et la fiche
-// détail d'un créneau.
+// Trois canaux, jamais deux fois la même information : le badge porte le STATUT, la barre de
+// durée l'AIDANT, le rail droit le BÉNÉFICIAIRE. Les libellés et tonalités viennent de
+// `app/utils/status.ts`, partagés avec la grille horaire et la fiche détail d'un créneau.
 </script>
 
 <template>

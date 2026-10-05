@@ -1,0 +1,177 @@
+// Tableau de bord hebdomadaire : les sept jours, les revenus prévus et les kilomètres.
+//
+// Les chiffres viennent du serveur (`/api/appointments/summary?week=`) : cette feuille pose des
+// lignes et des rails, elle ne calcule rien. Les deux couleurs qui s'y lisent sont celles des
+// PERSONNES nommées sur la ligne — rail couleur du bénéficiaire sur une ligne de bénéficiaire,
+// rail couleur de l'aidant sur l'en-tête de son groupe.
+@use '../abstracts/mixins' as *;
+
+@layer components {
+  // Barre de titre : empilée sur téléphone, sur une ligne à partir de `sm`. Les trois boutons de
+  // semaine ne laissent, à 360 px, qu'une soixantaine de pixels au titre — « TABLEAU DE BO… ».
+  // Le titre garde donc toute la largeur, et la navigation passe dessous.
+  .tableau__barre {
+    @apply flex flex-col items-start gap-2;
+
+    @include from('sm') {
+      @apply flex-row items-center justify-between;
+    }
+  }
+
+  .tableau__actions {
+    @apply flex shrink-0 items-center gap-1;
+  }
+
+  // Un jour du récapitulatif : c'est la COLONNE de la vue semaine (`.semaine__colonne`, grille
+  // partagée `1 / 2 / 3`) — le tableau de bord n'y ajoute que cette garantie de rétrécir. Une
+  // colonne de grille a `min-width: auto` : sans ce `min-w-0`, un nom très long ferait grandir la
+  // colonne et pousserait la page en largeur, au lieu de laisser l'ellipse jouer son rôle.
+  .tableau__jour {
+    @apply min-w-0;
+  }
+
+  // L'en-tête d'un jour est le seul lien du bloc, et une cible de 44 px : on ouvre le jour pour
+  // le modifier, mais on le repère ici.
+  .tableau__jour-lien {
+    @apply flex min-h-11 shrink-0 items-baseline justify-between gap-2 border-b border-line
+      bg-surface-muted px-3 py-2 text-ink no-underline;
+
+    &:hover {
+      @apply bg-canvas no-underline;
+    }
+  }
+
+  .tableau__jour-nom {
+    @apply font-display text-sm uppercase tracking-[0.02em];
+  }
+
+  .tableau__jour-total {
+    @include chiffres-tabulaires;
+    @apply shrink-0 text-xs font-medium text-ink-soft;
+  }
+
+  // Une ligne de créneau : les heures d'abord, puis le rail de la personne et son nom.
+  .tableau__creneau {
+    @apply flex items-center gap-2 px-3 py-2 text-sm;
+  }
+
+  // Un créneau annulé reste listé — il fait partie de la semaine — mais ne se lit pas comme du
+  // travail fait : l'heure et le nom sont barrés, et le badge « Annulé » le dit en toutes lettres.
+  .tableau__creneau--annule .tableau__heures,
+  .tableau__creneau--annule .recap__nom {
+    @apply line-through;
+  }
+
+  .tableau__heures {
+    @include chiffres-tabulaires;
+    @apply shrink-0 text-sm font-medium text-ink-soft;
+  }
+
+  // Rail d'une personne : 3 px, transparent tant qu'elle n'a pas de couleur. L'élément existe
+  // toujours, donc l'épaisseur constante ne décale aucun nom d'une ligne à l'autre.
+  .tableau__rail {
+    @apply h-4 w-[3px] shrink-0 rounded-tag bg-transparent;
+  }
+
+  .tableau__vide {
+    @apply px-3 py-2 text-xs text-ink-muted;
+  }
+
+  .tableau__revenus {
+    @apply flex flex-col overflow-hidden rounded-card border border-line bg-surface;
+  }
+
+  .tableau__groupe {
+    @apply flex flex-col;
+  }
+
+  // Un séparateur entre deux aidants, jamais avant le premier : la bordure du conteneur est
+  // déjà là.
+  .tableau__groupe + .tableau__groupe {
+    @apply border-t border-line;
+  }
+
+  .tableau__groupe-entete {
+    @apply flex items-center gap-2 bg-surface-muted px-3 py-2;
+  }
+
+  // Une ligne de revenu. Sur un téléphone, le calcul passe sous le nom (le rail reste en
+  // première colonne, le montant en dernière) : à 360 px, nom + calcul + montant ne tiennent pas
+  // sur une rangée.
+  .tableau__revenu {
+    @apply grid items-center gap-x-2 px-3 py-2;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .tableau__revenu .tableau__rail {
+    grid-column: 1;
+  }
+
+  .tableau__revenu-nom {
+    @apply truncate text-sm font-medium text-ink;
+    grid-area: 1 / 2;
+  }
+
+  // Le calcul est la PREUVE du montant : il est toujours écrit, jamais remplacé par le seul total.
+  .tableau__calcul {
+    @include chiffres-tabulaires;
+    @apply text-xs text-ink-muted;
+    grid-area: 2 / 2 / 3 / 4;
+  }
+
+  .tableau__montant {
+    @include chiffres-tabulaires;
+    @apply text-sm font-medium text-ink;
+    grid-area: 1 / 3;
+    text-align: right;
+  }
+
+  @include from('md') {
+    .tableau__revenu {
+      grid-template-columns: auto minmax(0, 1fr) auto auto;
+    }
+
+    .tableau__calcul {
+      @apply text-right;
+      grid-area: 1 / 3;
+    }
+
+    .tableau__montant {
+      grid-area: 1 / 4;
+    }
+  }
+
+  // Le total d'un aidant, en fin de son groupe. Il n'apparaît qu'à partir de deux aidants :
+  // seul, il répéterait le total de la semaine mot pour mot.
+  .tableau__sous-total {
+    @apply flex items-baseline justify-between gap-2 border-t border-line px-3 py-2;
+  }
+
+  .tableau__sous-total-valeur {
+    @include chiffres-tabulaires;
+    @apply text-sm font-medium text-ink;
+  }
+
+  // Le chiffre qui se retient : une case encadrée, plus grande, plutôt qu'une ligne grise de plus.
+  .tableau__total {
+    @apply flex flex-col gap-0.5 border-t border-line bg-surface-muted px-3 py-3;
+  }
+
+  .tableau__total-libelle {
+    @apply text-xs font-medium text-ink-soft;
+  }
+
+  .tableau__total-valeur {
+    @include chiffres-tabulaires;
+    @apply text-xl font-medium text-ink;
+  }
+
+  .tableau__km {
+    @apply flex items-baseline justify-between gap-2 px-3 py-2;
+  }
+
+  .tableau__km-valeur {
+    @include chiffres-tabulaires;
+    @apply shrink-0 text-sm font-medium text-ink-soft;
+  }
+}

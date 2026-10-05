@@ -30,6 +30,7 @@ export const beneficiaries = pgTable('beneficiaries', {
   address: text('address'),
   hourlyRateCents: integer('hourly_rate_cents'),
   authorizedMinutesMonth: integer('authorized_minutes_month'),
+  color: text('color'),
   userId: uuid('user_id').unique().references(() => users.id),
 })
 

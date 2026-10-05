@@ -3,6 +3,9 @@
 // Les chiffres viennent du serveur (`app/utils/summary.ts`, via `/api/appointments/summary`)
 // : cet écran met en forme, il ne recompte pas. Deux totaux calculés à deux endroits
 // finiraient par diverger, et personne ne saurait lequel croire.
+//
+// Le tableau de bord (`app/pages/index.vue`) réutilise la barre, le titre et les lignes de
+// chiffres d'ici : les deux écrans sont des récapitulatifs, seul le pas de temps change.
 @use '../abstracts/mixins' as *;
 
 @layer components {

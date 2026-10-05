@@ -35,7 +35,7 @@ describe('Vue jour : actions rapides et modale', () => {
 
   it('marque un passage réalisé sans ouvrir la modale', () => {
     planToday('Vérif action rapide')
-    cy.visit('/')
+    cy.visit('/day')
 
     const card = () => cy.contains('.creneau-horaire', 'Vérif action rapide')
     card().should('contain', 'Planifié')
@@ -52,7 +52,7 @@ describe('Vue jour : actions rapides et modale', () => {
 
   it('ne peut pas enchaîner deux transitions du même doigt', () => {
     planToday('Vérif double appui')
-    cy.visit('/')
+    cy.visit('/day')
 
     const card = () => cy.contains('.creneau-horaire', 'Vérif double appui')
     card().find('[aria-label="Marquer comme réalisé"]').click()
@@ -63,7 +63,7 @@ describe('Vue jour : actions rapides et modale', () => {
 
   it('ferme la modale sur Échap, en rendant le défilement à la page', () => {
     planToday('Vérif Échap')
-    cy.visit('/')
+    cy.visit('/day')
 
     cy.contains('.creneau-horaire', 'Vérif Échap').click()
     cy.get('[role="dialog"]').should('be.visible')
@@ -77,7 +77,7 @@ describe('Vue jour : actions rapides et modale', () => {
 
   it('garde le focus dans la modale, et le rend à la carte', () => {
     planToday('Vérif focus')
-    cy.visit('/')
+    cy.visit('/day')
 
     cy.contains('.creneau-horaire', 'Vérif focus').click()
     cy.get('[role="dialog"]').should('be.visible')

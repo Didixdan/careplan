@@ -295,6 +295,22 @@ export function cleanup(ids: string[]): void {
 }
 
 /**
+ * Supprime les bénéficiaires créés par un test, APRÈS ses créneaux.
+ *
+ * Le serveur refuse — 409 — un bénéficiaire qui a encore des créneaux, donc ce nettoyage doit
+ * être enregistré APRÈS `cleanup()` : Mocha exécute les `afterEach` dans leur ordre
+ * d'enregistrement, et les créneaux partent donc en premier. Un résidu de scénario échoué est
+ * ignoré (on n'insiste pas), il sera repris par sa propre exécution suivante.
+ */
+export function cleanupBeneficiaries(ids: string[]): void {
+  afterEach(() => {
+    for (const id of ids.splice(0)) {
+      cy.request({ method: 'DELETE', url: `/api/beneficiaries/${id}`, failOnStatusCode: false })
+    }
+  })
+}
+
+/**
  * Supprime les tags créés par un test, APRÈS ses créneaux (le serveur refuse — 409 — de
  * supprimer un tag encore utilisé).
  *

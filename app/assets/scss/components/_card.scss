@@ -29,7 +29,9 @@
     @apply bg-surface-muted;
   }
 
-  // Rail coloré à gauche : identifie l'aidant d'un créneau.
+  // Rail coloré à droite : identifie la PERSONNE dont la carte porte le nom — l'aidant sur
+  // une ligne d'aidant, le bénéficiaire sur une ligne de bénéficiaire. Une carte n'a qu'un
+  // rail, parce qu'elle ne parle que d'une personne.
   // L'épaisseur est volontaire (3px) : plus fin, le rail disparaît en impression.
   .card--railed {
     @apply border-l-[3px];

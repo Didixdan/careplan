@@ -11,7 +11,10 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   // `to` alimente l'état actif (`aria-current`) : une route inexistante s'allumerait à tort.
-  { label: 'Jour', to: '/', icon: 'M8 7V3m8 4V3M3 11h18M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z' },
+  // Le tableau de bord est l'écran d'ouverture : il vient donc en PREMIER, et « Jour » garde sa
+  // place dans la barre basse, à côté de la semaine et du mois.
+  { label: 'Tableau de bord', to: '/', icon: 'M4 4h6v7H4zM14 4h6v4h-6zM14 12h6v8h-6zM4 15h6v5H4z' },
+  { label: 'Jour', to: '/day', icon: 'M8 7V3m8 4V3M3 11h18M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z' },
   { label: 'Semaine', to: '/week', icon: 'M4 6h16M4 10h16M4 14h7M4 18h7m7-8v8' },
   { label: 'Mois', to: '/month', icon: 'M4 20V10m5 10V4m5 16v-7m5 7V8' },
 ]
@@ -44,9 +47,12 @@ async function logout() {
 <template>
   <div class="app-shell app-shell--with-bottom-nav">
     <aside class="app-sidebar">
-      <p class="app-sidebar__brand">
+      <NuxtLink
+        class="app-sidebar__brand"
+        to="/"
+      >
         CarePlan
-      </p>
+      </NuxtLink>
       <nav aria-label="Navigation principale">
         <ul class="flex flex-col gap-0.5">
           <li
@@ -123,9 +129,14 @@ async function logout() {
 
     <div class="flex min-w-0 flex-1 flex-col">
       <header class="app-header">
-        <p class="app-header__title">
+        <!-- Le nom de l'application ramène au tableau de bord : c'est le geste attendu d'un
+             logotype, et il ne dépend d'aucun rôle. -->
+        <NuxtLink
+          class="app-header__title"
+          to="/"
+        >
           CarePlan
-        </p>
+        </NuxtLink>
 
         <div class="app-header__aside">
           <button

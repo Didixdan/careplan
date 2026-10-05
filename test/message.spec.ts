@@ -30,7 +30,8 @@ function appointment(options: {
     beneficiaryId: 'benef-1',
     primaryAssistant: assistant,
     primaryAssistantId: 'assist-1',
-    color: 'assistant-5',
+    assistantColor: 'assistant-5',
+    beneficiaryColor: null,
     coAssistants: [],
     coAssistantIds: [],
   }

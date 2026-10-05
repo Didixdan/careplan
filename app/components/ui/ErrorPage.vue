@@ -49,7 +49,7 @@ const props = withDefaults(
 
     <div>
       <NuxtLink
-        to="/"
+        to="/day"
         class="btn btn--primary"
       >
         Revenir au planning

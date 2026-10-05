@@ -44,7 +44,7 @@ aussi ; le français ne vit qu'à l'affichage.
 | Accès aux données | **Drizzle ORM**, schéma versionné dans le dépôt |
 | Authentification | `nuxt-auth-utils` (sessions cookies chiffrées, hachage scrypt) |
 | Supabase | **Écarté** — pas de compte tiers supplémentaire |
-| Emails | **Aucun** : l'admin crée les comptes et transmet les mots de passe |
+| Emails | **Aucun** : l'admin crée les comptes et transmet les mots de passe — pour en reposer un : `pnpm user:password <email> [motdepasse]` (sans mot de passe, il en **génère** un et l'affiche une fois) |
 | Autorisation | Vérifiée **côté serveur Nitro** à chaque requête, jamais seulement en base |
 
 **Pourquoi Postgres managé et pas SQLite** : Vercel n'héberge aucune base de données
@@ -58,15 +58,16 @@ dépôt, migrer vers un autre Postgres se limite à un `pg_dump` / `pg_restore`.
 | --- | --- |
 | utilisateur | `users` (email, hashed_password, role) |
 | aidant | `assistants` (first_name, last_name, color, contracted_minutes) |
-| bénéficiaire | `beneficiaries` (address, hourly_rate_cents, authorized_minutes_month) |
+| bénéficiaire | `beneficiaries` (address, hourly_rate_cents, authorized_minutes_month, color) |
 | créneau | `appointments` (date, start_time, end_time, status, beneficiary_id, primary_assistant_id) |
 | co-aidants | `appointment_assistants` (appointment_id, assistant_id) |
 | tag | `tags` (name, key) — le vocabulaire des actes |
 | tags d'un créneau | `appointment_tags` (appointment_id, tag_id, position) |
 | affectation | `assignments` (assistant_id, beneficiary_id) |
 
-Un créneau a **un** bénéficiaire, **un** aidant principal (dont la couleur colore le
-rail) et **zéro ou plusieurs** co-aidants. Les rôles sont `admin` / `assistant` /
+Un créneau a **un** bénéficiaire, **un** aidant principal (dont la couleur colore le rail
+gauche) et **zéro ou plusieurs** co-aidants. Le bénéficiaire peut porter une couleur
+facultative, qui colore le rail droit (voir §5). Les rôles sont `admin` / `assistant` /
 `viewer` ; l'autorisation est vérifiée côté serveur à chaque requête : `/api/appointments`
 filtre selon le rôle (l'aidant voit ses créneaux, le bénéficiaire les siens).
 
@@ -84,8 +85,9 @@ app/
                              PlanningTimeGrid, PlanningTimedAppointment, PlanningWeekGrid
     layout/                  LayoutShell
   composables/               theme.ts, planning.ts, loading.ts, drag.ts
-  pages/                     index (jour), week, month (récapitulatif), assistants,
-                             beneficiaries, tags (vocabulaire), login, styleguide, [...missing]
+  pages/                     index (tableau de bord, l'index de l'application), day (vue jour),
+                             week, month (récapitulatif), assistants, beneficiaries,
+                             tags (vocabulaire), login, styleguide, [...missing]
   utils/                     date.ts, duration.ts, colors.ts, grid.ts, conflicts.ts,
                              gesture.ts, status.ts, summary.ts, appointments.ts, tags.ts,
                              error.ts
@@ -162,23 +164,41 @@ précédentes ont été écartées, et il vaut la peine de savoir pourquoi :
   `danger` (annulé, absence). Le rouge est plus sourd que la normale
   (`oklch(41% .14 27)`) : un rouge vif donne l'impression d'une alarme.
 
-### Deux codes couleur distincts, jamais confondus
+### Trois codes couleur distincts, jamais confondus
 
 | Élément | Porte | Où |
 | --- | --- | --- |
-| **Rail** à gauche du créneau | l'**AIDANT** | `--creneau-couleur`, `assistant-1` … `assistant-8` |
-| **Badge** à droite du créneau | le **STATUT** | vert / ambre / rouge |
+| **Barre de durée** d'un créneau | l'**AIDANT principal** | `--creneau-couleur-aidant`, `assistant-1` … `assistant-8` |
+| **Rail droit** d'un créneau | le **BÉNÉFICIAIRE** | `--creneau-couleur-beneficiaire`, même palette |
+| **Rail gauche** d'une ligne de liste | la **PERSONNE NOMMÉE sur cette ligne** | `.card--railed`, `.tableau__rail` |
+| **Badge** | le **STATUT** | vert / ambre / rouge |
 
-Un créneau n'affiche donc jamais deux fois la même information par la couleur, et
-l'aidant est toujours écrit en toutes lettres à côté du rail.
+Un créneau n'affiche donc jamais deux fois la même information par la couleur, et les deux
+personnes sont toujours écrites en toutes lettres à côté de leur rail.
 
-### Couleurs d'aidant
+La carte de **liste** (bloc « Nuit ») n'a pas de rail gauche : l'aidant y garde exactement un
+canal, la **barre de durée**, et le bénéficiaire le rail droit. Un canal par personne, sur les
+deux types de carte.
 
-Huit teintes `assistant-1` … `assistant-8`. **La base stockera l'identifiant (`assistant-3`),
-jamais un code hexadécimal** : une couleur libre casserait le contraste garanti.
+Une **ligne qui ne parle que d'une personne** (récapitulatif du mois, tableau de bord) suit la
+règle inverse, et une seule : son rail **gauche** porte la couleur de la personne qu'elle nomme —
+celle de l'aidant sur une ligne d'aidant, celle du bénéficiaire sur une ligne de bénéficiaire. Le
+tableau de bord applique exactement cela : rail couleur du bénéficiaire sur chaque ligne de
+revenu, rail couleur de l'aidant sur l'en-tête de son groupe.
 
-Les luminosités diffèrent légèrement d'une teinte à l'autre, à dessein : l'écart de
-luminosité est le seul canal fiable pour distinguer deux couleurs en deutéranopie.
+### Couleurs d'aidant et de bénéficiaire : une seule palette, huit teintes
+
+Huit teintes `assistant-1` … `assistant-8`, **partagées** par les aidants et les bénéficiaires :
+`assistant-N` nomme une teinte, jamais un rôle, et c'est la **position** du rail qui dit de qui
+il s'agit. **La base stocke l'identifiant (`assistant-3`), jamais un code hexadécimal** : une
+couleur libre casserait le contraste garanti.
+
+La couleur d'un **bénéficiaire** est **facultative**. Sans elle, la carte ne pose aucune
+variable, la bordure droite reste transparente : **aucun marquage**, et surtout aucune teinte
+inventée par défaut — « pas encore choisi » doit se lire comme une absence.
+
+Les luminosités diffèrent légèrement d'une teinte à l'autre, à dessein : l'écart de luminosité
+est le seul canal fiable pour distinguer deux couleurs en deutéranopie.
 
 ### Contraste : une contrainte, pas une recommandation
 
@@ -230,11 +250,40 @@ Avec un cookie, le serveur rend directement `<html class="dark">`.
 
 ## 6. Vues de planning
 
-**Vue jour** (`app/pages/index.vue`) : l'écran d'ouverture, consulté sur téléphone,
-souvent debout. Trois chiffres de synthèse seulement (heures planifiées, passages,
-bénéficiaires), puis les créneaux. **Le seul élément mis en avant est ce qui demande
-une action** : un créneau « à vérifier » reçoit un fond teinté, les autres se contentent
-de leur badge. Si tout est mis en avant, rien ne l'est.
+**Tableau de bord** (`app/pages/index.vue`) : l'**index de l'application**, ouvert sur la semaine.
+Trois blocs, dans l'ordre de ce qu'on vient y chercher — et rien de plus :
+
+1. **Semaine** : les sept jours côte à côte, **dans la même grille que la vue semaine**
+   (`.semaine__grille` / `.semaine__colonne` : une colonne sur téléphone, deux à partir de `md`,
+   trois à partir de `lg`), une ligne par créneau — heures de début et de fin, puis le nom du
+   bénéficiaire et sa couleur — et « Aucun passage » sur les jours vides. Le jour courant est
+   marqué par sa **bordure**, comme dans la vue semaine : il n'y a donc **pas** de bandeau
+   « Aujourd'hui » séparé, qui ne ferait que répéter ce bloc. L'en-tête d'un jour est un lien vers
+   `/day`, sur SA date.
+2. **Revenus prévus** : un groupe par aidant, une ligne par bénéficiaire, le sous-total de l'aidant
+   (dès qu'il y a plusieurs aidants) puis le **total de la semaine**.
+3. **Kilomètres de la semaine**, par aidant — masqué quand rien n'est déclaré.
+
+**Tout sauf les annulés** entre dans un revenu prévu : le réalisé est déjà gagné, « à vérifier »
+et « prévu » sont devant nous. C'est la même règle que le montant prévisionnel du mois
+(`forecastMinutes`), et le total affiché dit « dont déjà réalisé ». Le montant suit le taux du
+**bénéficiaire** : un aidant qui travaille chez deux personnes a donc deux lignes, chacune à son
+taux — c'est la maille de `summariseByPair`, et elle est testée.
+
+**Un total partiel n'est jamais présenté comme complet** : un taux non saisi rend la ligne, le
+sous-total de l'aidant et le total de la semaine « À saisir ». Un taux **non communiqué** (lecteur)
+n'est pas un taux manquant : le bloc des revenus est alors absent, jamais « À saisir ». Le même
+principe régit les kilomètres : `weeklyMileage` renvoie une liste vide pour un lecteur.
+
+Les chiffres viennent du **serveur** (`/api/appointments/summary?week=`, à côté de
+`/api/appointments?week=` pour les lignes) : l'écran met en forme, il ne recompte pas. Les deux
+lectures portent la clé de cache de la vue semaine, donc passer du tableau de bord à `/week` ne
+relit rien.
+
+**Vue jour** (`app/pages/day.vue`) : consultée sur téléphone, souvent debout. Trois chiffres de
+synthèse seulement (heures planifiées, passages, bénéficiaires), puis les créneaux. **Le seul
+élément mis en avant est ce qui demande une action** : un créneau « à vérifier » reçoit un fond
+teinté, les autres se contentent de leur badge. Si tout est mis en avant, rien ne l'est.
 
 **Vue semaine** (`app/pages/week.vue`) : les sept jours sont empilés en grille — une colonne
 sur téléphone, deux à partir de `md`, trois à partir de `lg` (donc 3/3/1 en desktop, dimanche
@@ -588,11 +637,12 @@ importante est vérifiée par du code exécutable :
 
 | Garantie | Vérifiée par |
 | --- | --- |
-| Passage de minuit, dates civiles, mois civils, couleurs, statuts, fixtures, hachage | `pnpm test` (Vitest, 223 tests) |
+| Passage de minuit, dates civiles, mois civils, couleurs, statuts, fixtures, hachage, génération de mot de passe | `pnpm test` (Vitest) |
 | Chevauchement par aidant, jours à cheval sur minuit | `pnpm test` (`conflicts.spec.ts`) |
 | Plages horaires acceptées ou refusées, et pourquoi | `pnpm test` (`checkTimeRange`) |
 | Tap ou glisser : le seuil qui rend la suppression atteignable | `pnpm test` (`gesture.spec.ts`) |
 | Ce qui se déclare, le comptage d'un binôme, le mois d'une nuit | `pnpm test` (`summary.spec.ts`) |
+| Les revenus par couple aidant × bénéficiaire, et « À saisir » plutôt qu'un total partiel | `pnpm test` (`summariseByPair`, `incomeTotals`, `incomeGroups`) |
 | Transitions d'action rapide, et place disponible sur une carte | `pnpm test` (`status.spec.ts`, `hasRoomForStatusActions`) |
 | Montants au centime, heures décimales | `pnpm test` (`money.spec.ts`) |
 | CSV : BOM, séparateur, échappement | `pnpm test` (`csv.spec.ts`) |
@@ -609,6 +659,8 @@ importante est vérifiée par du code exécutable :
 | Les actions rapides réellement rendues : combien de boutons, pour quel rôle | `pnpm e2e` (`planning.cy.ts`) |
 | La modale : Échap, boucle du focus, défilement verrouillé, focus rendu à la carte | `pnpm e2e` (`planning.cy.ts`) |
 | Le glisser-déposer au pointeur, et le refus du chevauchement | `pnpm e2e` (`drag.cy.ts`) |
+| Le récapitulatif d'une semaine par couple aidant × bénéficiaire, et le filtre par rôle | `pnpm e2e` (`api.cy.ts`) |
+| Le tableau de bord : calcul affiché, « À saisir », rails, rôles, navigation | `pnpm e2e` (`dashboard.cy.ts`) |
 | La navigation basse à 360 px, sans débordement horizontal | `pnpm e2e` (`mobile.cy.ts`) |
 | Le clavier : Entrée et Espace ouvrent la fiche d'une carte | `pnpm e2e` (`week.cy.ts`) |
 | Le bouton « Copier » écrit vraiment dans le presse-papiers | `pnpm e2e` (`month.cy.ts`) |

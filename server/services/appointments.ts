@@ -10,10 +10,13 @@ import { isStatus, quickTransitions } from '../../app/utils/status'
 import { checkTagNames, cleanTagNames, MAX_TAGS, type TagProblem } from '../../app/utils/tags'
 import {
   forecastMinutes,
+  incomeTotals,
   summarise,
   summariseByAssistant,
   summariseByBeneficiary,
   summariseByDay,
+  summariseByPair,
+  toIncomeLine,
 } from '../../app/utils/summary'
 import type {
   Appointment,
@@ -26,10 +29,12 @@ import type {
   Role,
   SummaryLine,
   TagOption,
+  WeekIncomeLine,
+  WeekSummary,
 } from '../../shared/types/planning'
 import { appointmentAssistants, appointmentTags, appointments, assistants, beneficiaries, tags } from '../db/schema'
 import { useDb } from '../utils/db'
-import { monthlyMileage } from './mileage'
+import { monthlyMileage, weeklyMileage } from './mileage'
 import { listTagOptions, resolveTagIds } from './tags'
 
 const fullName = (firstName: string, lastName: string) => `${firstName} ${lastName}`.trim()
@@ -95,8 +100,10 @@ const TIME_RANGE_MESSAGES: Record<TimeRangeProblem, string> = {
 
 /**
  * Lecture des créneaux d'une plage (jour ou semaine), dénormalisés pour l'affichage :
- * bénéficiaire, aidant principal (couleur incluse) et co-aidants. Le filtre par rôle
- * borne l'aidant à ses créneaux et le bénéficiaire (lecture) aux siens.
+ * bénéficiaire (couleur incluse), aidant principal (couleur incluse) et co-aidants. Les deux
+ * couleurs sont lues ICI, à chaque requête : changer la couleur d'un bénéficiaire recolore
+ * donc tout son planning passé, sans reprise de données. Le filtre par rôle borne l'aidant à
+ * ses créneaux et le bénéficiaire (lecture) aux siens.
  */
 export async function listAppointments(options: AppointmentQuery): Promise<Appointment[]> {
   const db = useDb()
@@ -131,6 +138,7 @@ export async function listAppointments(options: AppointmentQuery): Promise<Appoi
       beneficiaryFirstName: beneficiaries.firstName,
       beneficiaryNom: beneficiaries.lastName,
       beneficiaryId: appointments.beneficiaryId,
+      beneficiaryColor: beneficiaries.color,
       primaryAssistant: appointments.primaryAssistantId,
       assistantFirstName: assistants.firstName,
       assistantNom: assistants.lastName,
@@ -196,9 +204,10 @@ export async function listAppointments(options: AppointmentQuery): Promise<Appoi
       status: row.status as Appointment['status'],
       beneficiary: fullName(row.beneficiaryFirstName, row.beneficiaryNom),
       beneficiaryId: row.beneficiaryId,
+      beneficiaryColor: row.beneficiaryColor as AssistantColor | null,
       primaryAssistant: fullName(row.assistantFirstName, row.assistantNom),
       primaryAssistantId: row.primaryAssistant,
-      color: row.color as AssistantColor,
+      assistantColor: row.color as AssistantColor,
       coAssistants: coAssistants.map(co => co.lastName),
       coAssistantIds: coAssistants.map(co => co.id),
     }
@@ -332,6 +341,61 @@ export async function summariseMonth(month: string, user?: UserFilter): Promise<
     byAssistant: assistantLines,
     byBeneficiary: beneficiaryLines,
     byDay: summariseByDay(appointments),
+  }
+}
+
+/**
+ * Récapitulatif d'une SEMAINE : les chiffres du tableau de bord.
+ *
+ * Même source que le mois — `listAppointments`, donc le même filtre par rôle que la grille — et
+ * mêmes règles de comptage (`app/utils/summary.ts`). Trois choses lui sont propres :
+ *
+ * - les revenus se lisent par **couple aidant × bénéficiaire** (`summariseByPair`) : le montant
+ *   suit le taux du bénéficiaire, donc un aidant qui travaille chez deux personnes a deux lignes,
+ *   chacune à son taux ;
+ * - les kilomètres sont ceux de la semaine, par aidant (`weeklyMileage`) ;
+ * - le taux reste réservé à l'admin et à l'aidant concerné (`showRates`) : un lecteur reçoit les
+ *   heures, jamais le coût employeur.
+ */
+export async function summariseWeek(week: string, user?: UserFilter): Promise<WeekSummary> {
+  if (!isCivilDate(week)) {
+    throw createError({ statusCode: 400, statusMessage: 'Date invalide.' })
+  }
+
+  // N'importe quel jour de la semaine est accepté ; la réponse porte le lundi résolu.
+  const monday = startOfWeek(week)
+  const appointments = await listAppointments({ week: monday, user })
+  const showRates = !user || user.role === 'admin' || user.role === 'assistant'
+
+  const pairs = summariseByPair(appointments)
+  const beneficiaryIds = [...new Set(pairs.map(pair => pair.beneficiaryId))]
+
+  const rates = new Map<string, number | null>()
+  // `inArray` avec un tableau vide produirait un SQL invalide : une semaine sans créneau est une
+  // semaine vide, pas une erreur.
+  if (showRates && beneficiaryIds.length > 0) {
+    const db = useDb()
+    const rows = await db
+      .select({ id: beneficiaries.id, hourlyRateCents: beneficiaries.hourlyRateCents })
+      .from(beneficiaries)
+      .where(inArray(beneficiaries.id, beneficiaryIds))
+    for (const row of rows) rates.set(row.id, row.hourlyRateCents)
+  }
+
+  const byPair: WeekIncomeLine[] = pairs.map(pair => toIncomeLine(
+    pair,
+    // `undefined` = taux non communiqué à ce rôle : le champ disparaît du DTO.
+    showRates ? rates.get(pair.beneficiaryId) ?? null : undefined,
+  ))
+
+  return {
+    week: monday,
+    dates: weekOf(monday),
+    totals: summarise(appointments),
+    byDay: summariseByDay(appointments),
+    byPair,
+    income: incomeTotals(byPair),
+    mileage: await weeklyMileage(monday, user),
   }
 }
 

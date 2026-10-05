@@ -19,7 +19,7 @@ describe('Connexion', () => {
     cy.location('pathname').should('equal', '/login')
   })
 
-  it('ouvre le planning à l’administrateur, avec ses écrans de gestion', () => {
+  it('ouvre le tableau de bord à l’administrateur, avec ses écrans de gestion', () => {
     cy.signIn('admin')
     cy.visit('/')
     cy.contains('a', 'Bénéficiaires').should('exist')

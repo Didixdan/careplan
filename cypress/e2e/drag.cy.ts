@@ -89,7 +89,7 @@ describe('Déplacement d’un créneau', () => {
 
   it('déplace un créneau, par pas de 15 minutes et sans changer sa durée', () => {
     planToday('Vérif déplacement').then((before) => {
-      cy.visit('/')
+      cy.visit('/day')
       cards().should('have.length.at.least', 1)
 
       // 48 px = 30 minutes à 1,6 px la minute.
@@ -112,7 +112,7 @@ describe('Déplacement d’un créneau', () => {
     // sans que le test ait à choisir une heure.
     planToday('Vérif chevauchement B')
     planToday('Vérif chevauchement A').then((a) => {
-      cy.visit('/')
+      cy.visit('/day')
 
       // Vers le HAUT d'une heure : A viendrait se poser exactement sur B, qui est juste au-dessus.
       dragCard('Vérif chevauchement A', -96)

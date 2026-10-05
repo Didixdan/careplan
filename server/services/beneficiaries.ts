@@ -1,4 +1,6 @@
 import { eq } from 'drizzle-orm'
+import type { AssistantColor } from '../../app/utils/colors'
+import { checkBeneficiaryColor, normalizeBeneficiaryColor } from '../../app/utils/colors'
 import type { Beneficiary } from '../../shared/types/planning'
 import { appointments, beneficiaries, users } from '../db/schema'
 import { useDb } from '../utils/db'
@@ -9,6 +11,8 @@ export interface CreateBeneficiary {
   address: string | null
   hourlyRateCents: number | null
   authorizedMinutesMonth: number | null
+  /** Champ FACULTATIF : `null` vaut « aucune couleur », donc aucun marquage au calendrier. */
+  color: AssistantColor | null
 }
 
 export type EditBeneficiary = CreateBeneficiary
@@ -19,12 +23,19 @@ function normalize(input: CreateBeneficiary) {
   if (!firstName || !lastName) {
     throw createError({ statusCode: 400, statusMessage: 'Prénom et nom requis.' })
   }
+
+  // La règle vit dans `app/utils/colors.ts` (pure, testée) ; ici, seul le message affiché.
+  if (checkBeneficiaryColor(input.color) !== null) {
+    throw createError({ statusCode: 400, statusMessage: 'Couleur invalide.' })
+  }
+
   return {
     firstName,
     lastName,
     address: input.address?.trim() || null,
     hourlyRateCents: input.hourlyRateCents,
     authorizedMinutesMonth: input.authorizedMinutesMonth,
+    color: normalizeBeneficiaryColor(input.color),
   }
 }
 
@@ -42,6 +53,7 @@ export async function listBeneficiaries(): Promise<Beneficiary[]> {
     address: row.address,
     hourlyRateCents: row.hourlyRateCents,
     authorizedMinutesMonth: row.authorizedMinutesMonth,
+    color: row.color as AssistantColor | null,
   }))
 }
 
@@ -55,6 +67,7 @@ export async function createBeneficiary(input: CreateBeneficiary): Promise<Benef
     address: data.address,
     hourlyRateCents: data.hourlyRateCents,
     authorizedMinutesMonth: data.authorizedMinutesMonth,
+    color: data.color,
   }).returning({ id: beneficiaries.id })
 
   return { id: beneficiary!.id, ...data }
@@ -70,6 +83,7 @@ export async function editBeneficiary(id: string, input: EditBeneficiary): Promi
     address: data.address,
     hourlyRateCents: data.hourlyRateCents,
     authorizedMinutesMonth: data.authorizedMinutesMonth,
+    color: data.color,
   }).where(eq(beneficiaries.id, id)).returning({ id: beneficiaries.id })
 
   if (!beneficiary) return null

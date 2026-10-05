@@ -375,3 +375,119 @@ describe('API : copie d\'une semaine', () => {
     })
   })
 })
+
+/**
+ * Récapitulatif d'une SEMAINE : les revenus par couple aidant × bénéficiaire.
+ *
+ * Le croisement n'est pas recalculé ici : il est comparé à la liste des créneaux, lue par la même
+ * route et filtrée par le même rôle. Un total qui ne retombe pas sur ses lignes est un montant
+ * faux, pas un défaut d'affichage.
+ */
+interface WeekPair {
+  assistantId: string
+  beneficiaryId: string
+  plannedMinutes: number
+  minutes: number
+  hourlyRateCents?: number | null
+  amountCents: number | null
+}
+
+describe('API : récapitulatif de la semaine', () => {
+  const created: string[] = []
+  const tagNames: string[] = []
+  cleanup(created)
+  cleanupTags(tagNames)
+
+  it('additionne les couples aidant × bénéficiaire, et retombe sur ses lignes', () => {
+    cy.signIn('admin')
+
+    cy.referenceLists().then(({ beneficiaries, assistants }) => {
+      const mine = assistants[0]!
+      const beneficiary = beneficiaries[0]!
+      const week = weekStart(today())
+
+      /** Les cumuls du couple visé, tels que le serveur les rend pour la semaine. */
+      const lineOf = (body: { byPair: WeekPair[] }) =>
+        body.byPair.find(pair => pair.assistantId === mine.id && pair.beneficiaryId === beneficiary.id)
+
+      // Le seed pose déjà des créneaux dans la semaine courante : on mesure donc AVANT et APRÈS,
+      // plutôt que d'attendre une valeur absolue (même règle que les kilomètres).
+      cy.request(`/api/appointments/summary?week=${week}`).then((before) => {
+        const beforeLine = lineOf(before.body as { byPair: WeekPair[] })
+
+        cy.createFreeAppointment({
+          date: today(), tags: ['Vérif semaine récap'], status: 'planned',
+          beneficiaryId: beneficiary.id, primaryAssistantId: mine.id,
+        }).then(({ id, start, end }) => {
+          created.push(id)
+          tagNames.push('Vérif semaine récap')
+
+          const toMinutes = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5))
+          const raw = toMinutes(end) - toMinutes(start)
+          const minutes = raw > 0 ? raw : raw + 1440
+
+          cy.request(`/api/appointments/summary?week=${week}`).then((response) => {
+            const body = response.body as {
+              week: string
+              dates: string[]
+              income: { amountCents: number | null, missingRateCount: number }
+              byPair: WeekPair[]
+            }
+
+            // Le lundi résolu, et les sept dates qui vont avec.
+            expect(body.week).to.equal(week)
+            expect(body.dates).to.have.length(7)
+
+            // Le couple créé par le scénario : ses heures EN PLUS, puis son montant AU TAUX du
+            // bénéficiaire.
+            const line = lineOf(body)
+            expect(line, 'la ligne du couple créé').to.not.equal(undefined)
+            expect(line!.plannedMinutes).to.equal((beforeLine?.plannedMinutes ?? 0) + minutes)
+            expect(line!.minutes).to.equal((beforeLine?.minutes ?? 0) + minutes)
+
+            if (line!.hourlyRateCents === null || line!.hourlyRateCents === undefined) {
+              expect(line!.amountCents).to.equal(null)
+            }
+            else {
+              expect(line!.amountCents).to.equal(Math.round((line!.minutes / 60) * line!.hourlyRateCents))
+            }
+
+            // AUCUN total partiel : soit toutes les lignes ont un taux, soit le montant est null —
+            // jamais une somme de ce qui est chiffrable seulement.
+            const priced = body.byPair.filter(pair => pair.hourlyRateCents !== undefined && pair.hourlyRateCents !== null)
+            expect(body.income.amountCents).to.equal(
+              body.byPair.length > 0 && priced.length === body.byPair.length
+                ? body.byPair.reduce((total, pair) => total + (pair.amountCents ?? 0), 0)
+                : null,
+            )
+          })
+        })
+      })
+    })
+  })
+
+  it('ne communique pas le taux à une famille', () => {
+    cy.signIn('viewer')
+
+    cy.request(`/api/appointments/summary?week=${weekStart(today())}`).then((response) => {
+      const body = response.body as { byPair: { hourlyRateCents?: unknown }[], mileage: unknown[] }
+
+      expect(body.byPair).to.be.an('array')
+      // Le champ est ABSENT (et non `null`, qui veut dire « pas encore saisi ») : l'écran ne peut
+      // donc pas écrire « À saisir » à la place d'un montant interdit.
+      for (const line of body.byPair) expect(Object.keys(line)).not.to.include('hourlyRateCents')
+      // Les kilomètres appartiennent aux aidants : une famille n'en reçoit aucun.
+      expect(body.mileage).to.deep.equal([])
+    })
+  })
+
+  it('refuse une période absente, double ou mal formée', () => {
+    cy.signIn('admin')
+
+    cy.request({ url: '/api/appointments/summary', failOnStatusCode: false }).its('status').should('equal', 400)
+    cy.request({ url: `/api/appointments/summary?month=2027-01&week=${today()}`, failOnStatusCode: false })
+      .its('status').should('equal', 400)
+    cy.request({ url: '/api/appointments/summary?week=2027-02-30', failOnStatusCode: false })
+      .its('status').should('equal', 400)
+  })
+})

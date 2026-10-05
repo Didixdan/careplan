@@ -246,7 +246,7 @@ useHead({ title: 'CarePlan — aidants' })
         v-for="assistant in assistants ?? []"
         :key="assistant.id"
         railed
-        :style="{ borderLeftColor: `var(--color-${assistant.color})` }"
+        :style="{ borderLeftColor: colorVariable(assistant.color) }"
       >
         <div class="card__body flex items-center justify-between gap-3">
           <div class="min-w-0">

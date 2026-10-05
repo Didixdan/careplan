@@ -1,197 +1,167 @@
 <script setup lang="ts">
-import type { Appointment, AppointmentFormOptions } from '~~/shared/types/planning'
+import type { AssistantColor } from '~~/app/utils/colors'
+import type { Appointment, WeekIncomeLine, WeekSummary } from '~~/shared/types/planning'
 
-// Vue JOUR : une grille horaire (07h–22h) où chaque créneau est posé à son heure.
-const { referenceDate: currentDate, goToToday } = usePlanning()
+/**
+ * Tableau de bord : la SEMAINE en un coup d'œil.
+ *
+ * Trois blocs, dans l'ordre de ce qu'on vient chercher : les sept jours, les revenus prévus, les
+ * kilomètres. Les chiffres viennent du SERVEUR (`/api/appointments/summary?week=`) : cet écran met
+ * en forme, il ne recompte pas. Un total calculé à deux endroits finit par diverger, et personne ne
+ * sait plus lequel croire.
+ */
+const { referenceDate } = usePlanning()
 
-// `?fail=1` force la lecture à échouer, pour que l'état d'erreur soit exerçable.
+const dates = computed(() => week(referenceDate.value))
+
+// `?fail=1` force les deux lectures à échouer, pour que l'état d'erreur soit exerçable.
 const route = useRoute()
 const forceFailure = route.query.fail === '1'
 
 // `useRequestFetch` transmet le cookie de session côté serveur (sinon 401 au premier F5).
 const api = useRequestFetch()
 
-const { data: appointments, error, isLoading, refresh } = useLoading(
-  () => `appointments-day-${currentDate.value}`,
+/**
+ * Les créneaux de la semaine. La clé est CELLE de la vue semaine : passer de l'un à l'autre ne
+ * relit donc pas les mêmes créneaux, et la charge utile ne dépend d'aucun autre paramètre.
+ */
+const {
+  data: appointments,
+  error: appointmentsError,
+  isLoading: isLoadingAppointments,
+  refresh: refreshAppointments,
+} = useLoading(
+  () => `appointments-week-${referenceDate.value}`,
   () => api<Appointment[]>('/api/appointments', {
-    query: { date: currentDate.value, fail: forceFailure || undefined },
+    query: { week: referenceDate.value, fail: forceFailure || undefined },
   }),
-  [currentDate],
+  [referenceDate],
 )
 
-const sortedAppointments = computed(() =>
-  [...(appointments.value ?? [])].sort((a, b) => a.start.localeCompare(b.start)),
+const {
+  data: summary,
+  error: summaryError,
+  isLoading: isLoadingSummary,
+  refresh: refreshSummary,
+} = useLoading(
+  () => `appointments-week-summary-${referenceDate.value}`,
+  () => api<WeekSummary>('/api/appointments/summary', {
+    query: { week: referenceDate.value, fail: forceFailure || undefined },
+  }),
+  [referenceDate],
 )
 
-// Glisser-déposer : l'état est partagé entre la grille et les créneaux.
-// On lui passe la référence de données elle-même (et non un `computed`) : le
-// déplacement y est appliqué localement, sans recharger la grille.
-const { draggedAppointment, selectedAppointment, ghostPosition, hasConflict, startDrag } = useAppointmentDrag(appointments, refresh)
+/** Une panne, un message : les deux lectures racontent la même semaine. */
+const error = computed(() => appointmentsError.value ?? summaryError.value)
+const isLoading = computed(() => isLoadingAppointments.value || isLoadingSummary.value)
 
-// Actions rapides : même principe optimiste que le déplacement, avec un verrou par créneau.
-const { changeStatus, isStatusPending } = useAppointmentStatus(appointments, refresh)
+async function refresh() {
+  await Promise.all([refreshAppointments(), refreshSummary()])
+}
 
-// Filtre par aidant (réservé à l'admin) ET formulaire de créneau : une seule lecture des
-// listes de référence pour les deux. Un lecteur n'en a aucun usage, on ne la lui demande
-// donc pas — `/api/appointments/options` la lui refuserait de toute façon (403).
-const { user } = useUserSession()
-const isAdmin = computed(() => user.value?.role === 'admin')
-
-// Même règle que la carte et le tap : l'admin écrit tout, l'aidant ses créneaux, le lecteur
-// rien (`app/composables/planning.ts`).
-const canEdit = useCanEditAppointments()
-
-const { data: options, refresh: refreshOptions } = useLoading<AppointmentFormOptions>(
-  'appointment-options',
-  () => canEdit.value
-    ? api<AppointmentFormOptions>('/api/appointments/options')
-    : Promise.resolve({ beneficiaries: [], assistants: [], tags: [] }),
-  [canEdit],
-)
-const beneficiaries = computed(() => options.value?.beneficiaries ?? [])
-const assistants = computed(() => options.value?.assistants ?? [])
-/** Catalogue des tags du formulaire : chargé avec les deux autres listes, sous la même clé. */
-const catalogue = computed(() => options.value?.tags ?? [])
-const selectedAssistant = ref('')
-const isCreating = ref(false)
-
-// Kilomètres du jour : un champ par aidant, enregistré à la validation. Le brouillon et le
-// verrou vivent dans le composable, seul endroit qui sait si l'écriture a réussi.
-const { draftOf, failure: mileageFailure, isPending: isMileagePending, save: saveMileage, setDraft } = useMileage(currentDate)
-
-/**
- * Les aidants du jour, tels qu'ils apparaissent dans les créneaux : principal puis co-aidants,
- * dédoublonnés, triés. Pour un aidant, cette liste ne contient que lui — sa lecture est déjà
- * filtrée par le serveur. Aucune requête de plus, et la règle « qui a un passage ce jour-là »
- * reste celle de l'écran.
- */
-const dayAssistants = computed(() => {
-  const found = new Map<string, string>()
-
-  for (const appointment of sortedAppointments.value) {
-    found.set(appointment.primaryAssistantId, appointment.primaryAssistant)
-    appointment.coAssistantIds.forEach((id, index) => {
-      found.set(id, appointment.coAssistants[index] ?? '')
-    })
+/** Les créneaux, groupés par jour. L'API trie déjà par date puis par heure. */
+const byDate = computed(() => {
+  const grouped = new Map<string, Appointment[]>(dates.value.map(date => [date, []]))
+  for (const appointment of appointments.value ?? []) {
+    // Un créneau hors des sept dates affichées ne peut pas venir de cette lecture : on l'ignore
+    // plutôt que d'inventer un huitième bloc.
+    grouped.get(appointment.date)?.push(appointment)
   }
-
-  return [...found].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, 'fr'))
+  return grouped
 })
+
+const daySummaries = computed(() => new Map((summary.value?.byDay ?? []).map(day => [day.date, day])))
+
+/** Un jour sans créneau n'a aucun cumul : le prévisionnel est nul, il n'est pas absent. */
+const NO_MINUTES = { declaredMinutes: 0, toValidateMinutes: 0, plannedMinutes: 0 }
+
+/** Les sept blocs du récapitulatif : la date, ses créneaux, son total, et « est-ce aujourd'hui ». */
+const days = computed(() => dates.value.map(date => ({
+  date,
+  appointments: byDate.value.get(date) ?? [],
+  // Le total d'un jour est le prévisionnel — tout ce qui n'est pas annulé, comme partout ailleurs.
+  minutes: forecastMinutes(daySummaries.value.get(date) ?? NO_MINUTES),
+  isToday: isToday(date),
+})))
 
 /**
- * Après un enregistrement : on se rend sur la date visée si elle n'est pas celle affichée
- * (sinon le créneau resterait invisible et l'utilisateur croirait à un échec), sinon on
- * relit sans changer la clé — une relecture ne vide pas `data`, donc la grille ne repasse
- * pas par le squelette et le défilement est conservé.
+ * Le taux horaire est-il communiqué à ce rôle ? C'est le DTO qui tranche (champ absent pour un
+ * lecteur), et non l'écran qui devinerait le rôle : le bloc des revenus disparaît donc au lieu
+ * d'écrire « À saisir » là où aucun montant n'a le droit d'être montré.
  */
-function onSaved(date: string) {
-  isCreating.value = false
-  selectedAppointment.value = null
-  // Un tag inconnu vient peut-être d'être créé : le catalogue est relu pour qu'il soit
-  // proposé à la prochaine saisie, sans recharger la page.
-  refreshOptions()
-  if (currentDate.value === date) refresh()
-  else currentDate.value = date
-}
-
-/** Le panneau de création et celui d'un créneau existant ne s'ouvrent jamais ensemble. */
-function openCreate() {
-  selectedAppointment.value = null
-  isCreating.value = true
-}
-
-function selectAppointment(appointment: Appointment) {
-  isCreating.value = false
-  selectedAppointment.value = appointment
-}
-
-function closeModal() {
-  isCreating.value = false
-  selectedAppointment.value = null
-}
-
-function onDeleted() {
-  selectedAppointment.value = null
-  refresh()
-}
-
-const visibleAppointments = computed(() => {
-  if (!selectedAssistant.value) return sortedAppointments.value
-  const filter = selectedAssistant.value
-  return sortedAppointments.value.filter(
-    appointment => appointment.primaryAssistantId === filter || appointment.coAssistantIds.includes(filter),
-  )
-})
-
-const dayAppointments = computed(() => visibleAppointments.value.filter(c => isInGrid(c.start, c.end)))
-const nightAppointments = computed(() => visibleAppointments.value.filter(c => !isInGrid(c.start, c.end)))
-
-/** Heures planifiées, créneaux annulés exclus. */
-const totalMinutes = computed(() =>
-  visibleAppointments.value
-    .filter(appointment => appointment.status !== 'cancelled')
-    .reduce((total, appointment) => total + (durationInMinutes(appointment.start, appointment.end) ?? 0), 0),
+const ratesVisible = computed(() =>
+  (summary.value?.byPair ?? []).some(line => line.hourlyRateCents !== undefined),
 )
 
-const beneficiaryCount = computed(() =>
-  new Set(visibleAppointments.value.map(appointment => appointment.beneficiary).filter(Boolean)).size,
-)
+const income = computed(() => incomeGroups(summary.value?.byPair ?? []))
+const mileage = computed(() => summary.value?.mileage ?? [])
 
-const toValidate = computed(
-  () => visibleAppointments.value.filter(appointment => appointment.status === 'to_validate').length,
-)
+/** Un aidant ne lit que ses revenus : le titre le dit, plutôt qu'un générique trompeur. */
+const { user } = useUserSession()
+const isAssistant = computed(() => user.value?.role === 'assistant')
 
-useHead({ title: 'CarePlan — planning du jour' })
+useHead({ title: 'CarePlan — tableau de bord' })
 
-function previousDay() {
-  currentDate.value = addDays(currentDate.value, -1)
+function previousWeek() {
+  referenceDate.value = addDays(referenceDate.value, -7)
 }
 
-function nextDay() {
-  currentDate.value = addDays(currentDate.value, 1)
+function nextWeek() {
+  referenceDate.value = addDays(referenceDate.value, 7)
+}
+
+function currentWeek() {
+  referenceDate.value = today()
+}
+
+/**
+ * Le badge ne s'affiche que là où il change la lecture : « à vérifier » et « annulé ». Le prévu et
+ * le réalisé sont l'ordinaire d'une semaine — un badge sur chaque ligne noierait les deux autres.
+ */
+function showsStatus(status: Appointment['status']): boolean {
+  return status === 'to_validate' || status === 'cancelled'
+}
+
+/** Rail d'une personne : `undefined` = aucun marquage, jamais une teinte inventée. */
+function railStyle(color: AssistantColor | null | undefined): Record<string, string> | undefined {
+  return color ? { backgroundColor: colorVariable(color) } : undefined
+}
+
+/** Un montant absent s'écrit « À saisir » : jamais 0 €, qui se lirait comme un salaire. */
+function amountLabel(cents: number | null): string {
+  return cents === null ? 'À saisir' : formatEuros(cents)
+}
+
+/**
+ * Le calcul AFFICHÉ : « 12,50 h × 38,75 €/h ». Un taux non saisi s'écrit, plutôt que de laisser
+ * un « × €/h » devant lequel personne ne sait si c'est un bug ou une donnée manquante.
+ */
+function calculation(line: WeekIncomeLine): string {
+  const rate = line.hourlyRateCents
+  return `${formatHoursDecimal(line.minutes)} h × `
+    + (rate === null || rate === undefined ? 'taux à saisir' : `${formatCents(rate)} €/h`)
 }
 </script>
 
 <template>
-  <div class="container-app jour-vue py-4">
-    <div class="jour-vue__barre">
+  <div class="container-app recap py-4">
+    <div class="tableau__barre">
       <div class="min-w-0">
-        <h1 class="jour-vue__titre">
-          {{ isToday(currentDate) ? "Aujourd'hui" : longDay(currentDate) }}
+        <h1 class="recap__titre">
+          Tableau de bord
         </h1>
         <p class="text-sm text-ink-muted">
-          {{ dayOfMonth(currentDate) }} {{ longMonth(currentDate) }}
+          {{ weekLabel(dates) }}
         </p>
       </div>
 
-      <div class="flex shrink-0 items-center gap-1">
-        <!-- Seule action de l'écran, donc seule à porter la couleur primaire ; les trois
-             boutons de navigation restent secondaires. -->
-        <UiButton
-          v-if="canEdit && !isCreating"
-          variant="primary"
-          size="sm"
-          icon-only
-          aria-label="Nouveau créneau"
-          @click="openCreate"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            aria-hidden="true"
-          >
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-        </UiButton>
+      <div class="tableau__actions">
         <UiButton
           variant="secondary"
           size="sm"
           icon-only
-          aria-label="Jour précédent"
-          @click="previousDay"
+          aria-label="Semaine précédente"
+          @click="previousWeek"
         >
           <svg
             viewBox="0 0 24 24"
@@ -208,17 +178,16 @@ function nextDay() {
         <UiButton
           variant="secondary"
           size="sm"
-          aria-label="Revenir à aujourd'hui"
-          @click="currentDate = today()"
+          @click="currentWeek"
         >
-          Aujourd'hui
+          Cette semaine
         </UiButton>
         <UiButton
           variant="secondary"
           size="sm"
           icon-only
-          aria-label="Jour suivant"
-          @click="nextDay"
+          aria-label="Semaine suivante"
+          @click="nextWeek"
         >
           <svg
             viewBox="0 0 24 24"
@@ -237,8 +206,8 @@ function nextDay() {
 
     <UiEmptyState
       v-if="error"
-      title="Impossible de charger le planning"
-      :text="error.message || 'La lecture des créneaux a échoué.'"
+      title="Impossible de charger le tableau de bord"
+      :text="error.message || 'La lecture de la semaine a échoué.'"
     >
       <template #action>
         <UiButton
@@ -256,227 +225,161 @@ function nextDay() {
     />
 
     <template v-else>
-      <!-- Synthèse : trois chiffres, volontairement pas plus. -->
-      <div class="synthese">
-        <div class="synthese__case">
-          <span class="synthese__valeur">{{ formatDuration(totalMinutes) }}</span>
-          <span class="synthese__libelle">planifiées</span>
-        </div>
-        <div class="synthese__case">
-          <span class="synthese__valeur">{{ visibleAppointments.length }}</span>
-          <span class="synthese__libelle">
-            {{ visibleAppointments.length > 1 ? 'passages' : 'passage' }}
-          </span>
-        </div>
-        <div class="synthese__case">
-          <span class="synthese__valeur">{{ beneficiaryCount }}</span>
-          <span class="synthese__libelle">
-            {{ beneficiaryCount > 1 ? 'bénéficiaires' : 'bénéficiaire' }}
-          </span>
-        </div>
-      </div>
+      <!-- La semaine, jour par jour : la même grille que la vue semaine (une, deux puis trois
+           colonnes), et le jour courant marqué par sa bordure — pas de bandeau « Aujourd'hui »,
+           qui ne ferait que répéter ce bloc. -->
+      <section class="section">
+        <h2 class="eyebrow font-sans">
+          Semaine
+        </h2>
 
-      <!-- Alerte : ce qui demande une action est mis en avant, et lui seul.
-           Elle n'est PAS un lien : les créneaux concernés sont dans la grille juste en
-           dessous, où un lien vers la page courante n'aurait mené nulle part. -->
-      <div
-        v-if="toValidate > 0"
-        class="card"
-      >
-        <div class="card__body flex items-center gap-3 py-2.5">
-          <UiBadge
-            tone="warning"
-            dot
-          >
-            {{ toValidate }} à vérifier
-          </UiBadge>
-          <span class="text-sm text-ink-soft">
-            {{ toValidate > 1 ? 'Des créneaux attendent' : 'Un créneau attend' }}
-            d'être vérifiés : touchez-le pour changer son statut
-          </span>
-        </div>
-      </div>
-
-      <!-- Kilomètres déclarés : un champ par aidant du jour, enregistré à la validation
-           (Entrée) ou en quittant le champ. Rien à ouvrir, rien à confirmer : c'est un relevé
-           quotidien, pas une déclaration. -->
-      <div
-        v-if="canEdit && dayAssistants.length > 0"
-        class="card"
-      >
-        <div class="card__body mileage">
-          <p class="mileage__titre">
-            Kilomètres
-          </p>
-
+        <div class="semaine__grille">
           <div
-            v-for="assistant in dayAssistants"
-            :key="assistant.id"
-            class="mileage__ligne"
+            v-for="day in days"
+            :key="day.date"
+            class="semaine__colonne tableau__jour"
+            :class="{ 'semaine__colonne--aujourdhui': day.isToday }"
           >
-            <label
-              class="mileage__nom"
-              :for="`mileage-${assistant.id}`"
-            >{{ assistant.name }}</label>
-            <span class="mileage__champ">
-              <input
-                :id="`mileage-${assistant.id}`"
-                :value="draftOf(assistant.id)"
-                class="field__control mileage__saisie"
-                type="text"
-                inputmode="decimal"
-                :disabled="isMileagePending(assistant.id)"
-                placeholder="0"
-                @input="setDraft(assistant.id, ($event.target as HTMLInputElement).value)"
-                @keydown.enter="saveMileage(assistant.id, assistant.name)"
-                @blur="saveMileage(assistant.id, assistant.name)"
+            <!-- L'en-tête mène à la vue jour, sur SA date : le récapitulatif sert à repérer un
+                 jour, pas à le modifier. -->
+            <NuxtLink
+              class="tableau__jour-lien"
+              to="/day"
+              @click="referenceDate = day.date"
+            >
+              <span class="tableau__jour-nom">{{ longDay(day.date) }} {{ dayOfMonth(day.date) }}</span>
+              <span class="tableau__jour-total">{{ formatDuration(day.minutes) }}</span>
+            </NuxtLink>
+
+            <div class="divide-y divide-line">
+              <p
+                v-for="appointment in day.appointments"
+                :key="appointment.id"
+                class="tableau__creneau"
+                :class="{ 'tableau__creneau--annule': appointment.status === 'cancelled' }"
               >
-              <span class="mileage__unite">km</span>
-            </span>
+                <span class="tableau__heures">{{ appointment.start }} – {{ appointment.end }}</span>
+                <span
+                  class="tableau__rail"
+                  aria-hidden="true"
+                  :style="railStyle(appointment.beneficiaryColor)"
+                />
+                <span class="recap__nom">{{ appointment.beneficiary }}</span>
+                <UiBadge
+                  v-if="showsStatus(appointment.status)"
+                  class="ml-auto shrink-0"
+                  :tone="STATUS_TONES[appointment.status]"
+                >
+                  {{ STATUS_LABELS[appointment.status] }}
+                </UiBadge>
+              </p>
+
+              <!-- Une zone vide sans texte se lirait comme un défaut d'affichage. -->
+              <p
+                v-if="day.appointments.length === 0"
+                class="tableau__vide"
+              >
+                Aucun passage
+              </p>
+            </div>
           </div>
-
-          <p
-            v-if="mileageFailure"
-            class="field__error"
-          >
-            {{ mileageFailure }}
-          </p>
         </div>
-      </div>
+      </section>
 
-      <!-- Filtre par aidant, réservé à l'admin -->
-      <div
-        v-if="isAdmin"
-        class="field"
+      <!-- Revenus prévus : un groupe par aidant, une ligne par bénéficiaire — le montant suit le
+           taux du bénéficiaire, donc chaque ligne a le sien. -->
+      <section
+        v-if="ratesVisible && income.length > 0"
+        class="section"
       >
-        <label
-          class="field__label"
-          for="filter-assistant"
-        >Aidant</label>
-        <select
-          id="filter-assistant"
-          v-model="selectedAssistant"
-          class="field__control"
-        >
-          <option value="">
-            Tous les aidants
-          </option>
-          <option
-            v-for="option in assistants"
-            :key="option.id"
-            :value="option.id"
-          >
-            {{ option.name }}
-          </option>
-        </select>
-      </div>
+        <h2 class="eyebrow font-sans">
+          {{ isAssistant ? 'Mes revenus prévus' : 'Revenus prévus de la semaine' }}
+        </h2>
 
-      <UiEmptyState
-        v-if="visibleAppointments.length === 0"
-        title="Aucun passage prévu ce jour-là"
-        text="Rien n'est planifié pour cette date. Vous pouvez ajouter un créneau, ou consulter la semaine pour vérifier les autres jours."
-      >
-        <template #action>
-          <!-- L'action probable d'une journée vide est d'y ajouter un passage, pas de
-               changer de date : c'est elle qui est proposée en premier. -->
-          <UiButton
-            v-if="canEdit && !isCreating"
-            variant="primary"
-            @click="openCreate"
+        <div class="tableau__revenus">
+          <div
+            v-for="group in income"
+            :key="group.assistantId"
+            class="tableau__groupe"
           >
-            Ajouter un créneau
-          </UiButton>
-          <UiButton
-            v-if="!isToday(currentDate)"
-            variant="ghost"
-            @click="goToToday"
-          >
-            Revenir à aujourd'hui
-          </UiButton>
-        </template>
-      </UiEmptyState>
+            <p class="tableau__groupe-entete">
+              <span
+                class="tableau__rail"
+                aria-hidden="true"
+                :style="railStyle(group.assistantColor)"
+              />
+              <span class="recap__nom">{{ group.assistantName }}</span>
+              <!-- Les heures de l'aidant sur la semaine : le contexte du montant, sans le répéter. -->
+              <span class="recap__contexte ml-auto shrink-0">{{ formatDuration(group.minutes) }}</span>
+            </p>
 
-      <template v-else>
-        <PlanningTimeGrid
-          v-if="dayAppointments.length > 0"
-          :date="currentDate"
-          :appointments="dayAppointments"
-          :ghost="ghostPosition"
-          :has-conflict="hasConflict"
-          :dragged-appointment-id="draggedAppointment?.id ?? null"
-          :start-drag="startDrag"
-          :select="selectAppointment"
-          :change-status="changeStatus"
-          :is-status-pending="isStatusPending"
-        />
+            <div class="divide-y divide-line">
+              <p
+                v-for="line in group.lines"
+                :key="line.beneficiaryId"
+                class="tableau__revenu"
+              >
+                <span
+                  class="tableau__rail"
+                  aria-hidden="true"
+                  :style="railStyle(line.beneficiaryColor)"
+                />
+                <span class="tableau__revenu-nom">{{ line.beneficiaryName }}</span>
+                <span class="tableau__calcul">{{ calculation(line) }}</span>
+                <span class="tableau__montant">{{ amountLabel(line.amountCents) }}</span>
+              </p>
+            </div>
 
-        <section
-          v-if="nightAppointments.length > 0"
-          class="card"
-        >
-          <div class="card__header">
-            <p class="card__title">
-              Nuit
+            <!-- Le total de l'aidant, en fin de son groupe. Sur une vue à un seul aidant, il
+                 répéterait le total de la semaine : on ne le montre qu'à partir de deux. -->
+            <p
+              v-if="income.length > 1"
+              class="tableau__sous-total"
+            >
+              <span class="recap__contexte">Total {{ group.assistantName }}</span>
+              <span class="tableau__sous-total-valeur">{{ amountLabel(group.amountCents) }}</span>
             </p>
           </div>
-          <div class="divide-y divide-line">
-            <!-- Créneaux de nuit : hors grille, donc non déplaçables, mais sélectionnables.
-                 Les attributs de focus passent au composant (une seule racine, attributs hérités). -->
-            <PlanningAppointment
-              v-for="appointment in nightAppointments"
-              :key="appointment.id"
-              :start="appointment.start"
-              :end="appointment.end"
-              :beneficiary="appointment.beneficiary"
-              :tags="appointment.tags"
-              :primary-assistant="appointment.primaryAssistant"
-              :color="appointment.color"
-              :co-assistants="appointment.coAssistants"
-              :status="appointment.status"
-              :status-pending="isStatusPending(appointment.id)"
-              :tabindex="canEdit ? 0 : undefined"
-              :role="canEdit ? 'button' : undefined"
-              @click="selectAppointment(appointment)"
-              @keydown.enter.prevent="selectAppointment(appointment)"
-              @keydown.space.prevent="selectAppointment(appointment)"
-              @status-change="changeStatus(appointment, $event)"
-            />
+
+          <div class="tableau__total">
+            <p class="tableau__total-libelle">
+              Total par semaine
+            </p>
+            <p class="tableau__total-valeur">
+              {{ amountLabel(summary?.income.amountCents ?? null) }}
+            </p>
+            <p class="recap__contexte">
+              Dont déjà réalisé : {{ amountLabel(summary?.income.declaredAmountCents ?? null) }}
+              <template v-if="(summary?.income.missingRateCount ?? 0) > 0">
+                · {{ summary?.income.missingRateCount }} taux manquant{{ (summary?.income.missingRateCount ?? 0) > 1 ? 's' : '' }}
+              </template>
+            </p>
           </div>
-        </section>
-      </template>
+        </div>
+      </section>
+
+      <!-- Kilomètres déclarés : un relevé quotidien, cumulé sur la semaine. -->
+      <section
+        v-if="mileage.length > 0"
+        class="section"
+      >
+        <h2 class="eyebrow font-sans">
+          Kilomètres de la semaine
+        </h2>
+
+        <div class="card">
+          <div class="divide-y divide-line">
+            <p
+              v-for="entry in mileage"
+              :key="entry.assistantId"
+              class="tableau__km"
+            >
+              <span class="recap__nom">{{ entry.assistantName }}</span>
+              <span class="tableau__km-valeur">{{ formatKilometers(entry.kilometers) }} km</span>
+            </p>
+          </div>
+        </div>
+      </section>
     </template>
-
-    <!-- Création et modification dans une modale : le planning reste visible derrière, et
-         rien ne s'insère en haut de la grille. -->
-    <UiModal
-      v-if="isCreating"
-      title="Nouveau créneau"
-      @close="closeModal"
-    >
-      <PlanningAppointmentForm
-        :default-date="currentDate"
-        :beneficiaries="beneficiaries"
-        :assistants="assistants"
-        :catalogue="catalogue"
-        @saved="onSaved"
-        @cancel="closeModal"
-      />
-    </UiModal>
-
-    <UiModal
-      v-else-if="selectedAppointment"
-      title="Modifier le créneau"
-      @close="closeModal"
-    >
-      <PlanningAppointmentForm
-        :appointment="selectedAppointment"
-        :beneficiaries="beneficiaries"
-        :assistants="assistants"
-        :catalogue="catalogue"
-        @saved="onSaved"
-        @deleted="onDeleted"
-        @cancel="closeModal"
-      />
-    </UiModal>
   </div>
 </template>

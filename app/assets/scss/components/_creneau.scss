@@ -1,10 +1,11 @@
 // Styles de la cellule de créneau : heures en colonne de largeur fixe, durée en barre
-// proportionnelle, couleur d'aidant en rail pleine hauteur.
+// proportionnelle, rail de droite pour le bénéficiaire.
 @use '../abstracts/mixins' as *;
 
 @layer components {
   .creneau {
-    @apply flex items-stretch gap-3 px-3 py-2.5;
+    @apply flex items-stretch gap-3 border-r-[3px] px-3 py-2.5;
+    border-right-color: var(--creneau-couleur-beneficiaire, transparent);
   }
 
   // Largeur FIXE : les heures doivent s'aligner d'une carte à l'autre dans la journée.
@@ -69,10 +70,10 @@
 
   .duree__remplissage {
     @apply h-full rounded-tag;
-    // La couleur vient de l'aidant, posée par la carte sur `--creneau-couleur` ; le repli
-    // garde la barre visible si la variable manque. Pas d'utilitaire Tailwind pour un
+    // La couleur vient de l'aidant, posée par la carte sur `--creneau-couleur-aidant` ; le
+    // repli garde la barre visible si la variable manque. Pas d'utilitaire Tailwind pour un
     // `var()` AVEC repli.
-    background-color: var(--creneau-couleur, var(--color-primary));
+    background-color: var(--creneau-couleur-aidant, var(--color-primary));
   }
 
   // La barre est décorative : la durée est TOUJOURS écrite à côté, sinon la longueur

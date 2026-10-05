@@ -15,8 +15,9 @@ const emit = defineEmits<{
 }>()
 
 // Libellés et tonalités de statut : partagés par les trois vues qui affichent un créneau
-// (`app/utils/status.ts`). Le badge porte le STATUT, le rail porte l'AIDANT, et le titre est le
-// BÉNÉFICIAIRE : c'est lui qu'on cherche des yeux dans une journée.
+// (`app/utils/status.ts`). Le badge porte le STATUT, le rail gauche l'AIDANT, le rail droit le
+// BÉNÉFICIAIRE, et le titre est le BÉNÉFICIAIRE lui-même : c'est lui qu'on cherche des yeux
+// dans une journée.
 
 // La carte n'est activable que pour qui peut écrire : un lecteur n'a rien à ouvrir, et une
 // carte focalisable qui ne fait rien est un arrêt de tabulation inerte.
@@ -31,7 +32,9 @@ const style = computed(() => {
   return {
     'top': `${minutesToPx(start)}px`,
     'height': `${Math.max(duration * PX_PER_MINUTE, 1)}px`,
-    '--creneau-couleur': `var(--color-${props.appointment.color})`,
+    '--creneau-couleur-aidant': colorVariable(props.appointment.assistantColor),
+    // Rail droit : `{}` quand le bénéficiaire n'a pas de couleur, donc aucun marquage.
+    ...beneficiaryRailStyle(props.appointment.beneficiaryColor),
   }
 })
 

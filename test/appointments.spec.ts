@@ -14,7 +14,8 @@ function appointment(id: string, date: string, start: string, end: string): Appo
     beneficiaryId: 'benef-1',
     primaryAssistant: 'Camille Roussel',
     primaryAssistantId: 'assistant-camille',
-    color: 'assistant-5',
+    assistantColor: 'assistant-5',
+    beneficiaryColor: null,
     coAssistants: [],
     coAssistantIds: [],
   }

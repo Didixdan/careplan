@@ -39,13 +39,10 @@
 
   .creneau-horaire {
     @apply absolute right-1 left-11 flex flex-col gap-[0.1rem] overflow-hidden
-      rounded-field border border-line border-l-[3px] bg-surface px-2 py-[0.3rem]
+      rounded-field border border-line border-l-[3px] border-r-[3px] bg-surface px-2 py-[0.3rem]
       cursor-grab touch-none select-none;
-
-    // `border-l-[3px]` pose l'épaisseur ; la couleur vient d'une variable choisie à
-    // l'exécution (`--color-assistant-N`), donc d'un `var()` que `@apply` n'accepte pas
-    // comme couleur de côté.
-    border-left-color: var(--creneau-couleur);
+    border-right-color: var(--creneau-couleur-aidant);
+    border-left-color: var(--creneau-couleur-beneficiaire, transparent);
   }
 
   .creneau-horaire--glisse {

@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   ASSISTANT_COLORS,
   ASSISTANT_COLOR_LABELS,
+  beneficiaryRailStyle,
+  checkBeneficiaryColor,
+  colorVariable,
   defaultAssistantColor,
   isAssistantColor,
+  normalizeBeneficiaryColor,
 } from '~/utils/colors'
 
 /**
@@ -93,5 +97,74 @@ describe('defaultAssistantColor', () => {
 
   it('accepte une chaîne vide sans planter', () => {
     expect(isAssistantColor(defaultAssistantColor(''))).toBe(true)
+  })
+})
+
+/**
+ * Couleur de bénéficiaire : FACULTATIVE, mais jamais libre. Ces tests verrouillent les deux
+ * moitiés de la règle — « rien » est une réponse valide, et tout le reste doit être l'une des
+ * huit teintes.
+ */
+describe('checkBeneficiaryColor', () => {
+  it('accepte les huit teintes', () => {
+    for (const color of ASSISTANT_COLORS) {
+      expect(checkBeneficiaryColor(color)).toBeNull()
+    }
+  })
+
+  it('accepte l\'absence de couleur sous ses trois formes', () => {
+    // `undefined` est ce que porte un corps de requête qui omet le champ, `''` ce que rend un
+    // `<select>` vidé : les refuser rendrait le champ obligatoire par accident.
+    expect(checkBeneficiaryColor(null)).toBeNull()
+    expect(checkBeneficiaryColor(undefined)).toBeNull()
+    expect(checkBeneficiaryColor('')).toBeNull()
+  })
+
+  it('refuse une couleur libre, qui casserait le contraste garanti', () => {
+    expect(checkBeneficiaryColor('#ff0000')).toBe('invalid')
+    expect(checkBeneficiaryColor('oklch(50% 0.1 200)')).toBe('invalid')
+    expect(checkBeneficiaryColor('assistant-9')).toBe('invalid')
+  })
+
+  it('refuse ce qui n\'est pas une chaîne', () => {
+    expect(checkBeneficiaryColor(3)).toBe('invalid')
+    expect(checkBeneficiaryColor({})).toBe('invalid')
+    expect(checkBeneficiaryColor(true)).toBe('invalid')
+  })
+})
+
+describe('normalizeBeneficiaryColor', () => {
+  it('rend la teinte connue', () => {
+    expect(normalizeBeneficiaryColor('assistant-7')).toBe('assistant-7')
+  })
+
+  it('rend `null` pour tout le reste', () => {
+    // Normaliser après contrôle : une valeur refusée ne doit jamais atteindre la base, et
+    // « rien » y arrive comme `null`, jamais comme chaîne vide.
+    expect(normalizeBeneficiaryColor(null)).toBeNull()
+    expect(normalizeBeneficiaryColor(undefined)).toBeNull()
+    expect(normalizeBeneficiaryColor('')).toBeNull()
+    expect(normalizeBeneficiaryColor('#ff0000')).toBeNull()
+  })
+})
+
+describe('beneficiaryRailStyle', () => {
+  it('pose la variable du rail droit pour une teinte', () => {
+    expect(beneficiaryRailStyle('assistant-3')).toEqual({
+      '--creneau-couleur-beneficiaire': 'var(--color-assistant-3)',
+    })
+  })
+
+  it('ne pose RIEN quand le bénéficiaire n\'a pas de couleur', () => {
+    // C'est le contrat « aucune couleur, aucun marquage » : la carte ne pose aucune variable,
+    // donc le CSS laisse la bordure transparente. Un repli inventerait un marquage.
+    expect(beneficiaryRailStyle(null)).toEqual({})
+  })
+})
+
+describe('colorVariable', () => {
+  it('suit la convention des jetons CSS', () => {
+    expect(colorVariable('assistant-1')).toBe('var(--color-assistant-1)')
+    expect(colorVariable('assistant-8')).toBe('var(--color-assistant-8)')
   })
 })

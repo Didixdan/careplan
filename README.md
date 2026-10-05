@@ -61,6 +61,7 @@ pnpm db:wait             # attend que la base soit réellement prête
 | `pnpm db:generate` | Génère la migration SQL depuis `server/db/schema.ts` |
 | `pnpm db:migrate` | Applique les migrations en attente |
 | `pnpm db:seed` | Peuple la semaine courante avec les fixtures |
+| `pnpm user:password` | Repose le mot de passe d'un compte : `pnpm user:password <email> [motdepasse]` — sans mot de passe il en **génère** un, l'enregistre et l'affiche **une seule fois** (aucun email n'est envoyé par l'application) |
 
 Seule la base est conteneurisée : l'application tourne nativement, ce qui préserve le
 rechargement à chaud. Si un Postgres tourne déjà sur le port 5432, régler
@@ -149,8 +150,9 @@ app/
                              PlanningTimedAppointment, PlanningWeekGrid
     layout/                  LayoutShell (nav basse mobile, colonne en desktop)
   composables/               theme.ts, planning.ts, loading.ts, drag.ts, status.ts, mileage.ts
-  pages/                     index (jour), week, month (récapitulatif), assistants,
-                             beneficiaries, tags (vocabulaire), login, styleguide, [...missing]
+  pages/                     index (tableau de bord, l'index), day (vue jour), week,
+                             month (récapitulatif), assistants, beneficiaries,
+                             tags (vocabulaire), login, styleguide, [...missing]
   utils/                     date, duration, colors, grid, conflicts, gesture, status, tags,
                              summary, appointments, money, csv, export, message, mileage,
                              error — PLAT (auto-import)
@@ -183,7 +185,8 @@ docker-compose.yml           Postgres 17 pour le développement local
 
 | Route | Vue |
 | --- | --- |
-| `/` | **Jour** — grille horaire (07h–22h) : créneaux créés, modifiés, déplacés (glisser-déposer), marqués réalisés/annulés en un clic et supprimés depuis l'écran, **kilomètres du jour déclarés par aidant** |
+| `/` | **Tableau de bord** — l'index : les **sept jours de la semaine** côte à côte (même grille que la vue semaine, jour courant marqué par sa bordure), une ligne par créneau avec heure de début, heure de fin, nom du bénéficiaire et sa couleur ; les **revenus prévus** par aidant puis par bénéficiaire (`heures × taux horaire`, total de l'aidant et total de la semaine, « À saisir » plutôt qu'un total partiel) ; et les **kilomètres déclarés** dans la semaine. Semaine navigable (‹ ›, « Cette semaine ») |
+| `/day` | **Jour** — grille horaire (07h–22h) : créneaux créés, modifiés, déplacés (glisser-déposer), marqués réalisés/annulés en un clic et supprimés depuis l'écran, **kilomètres du jour déclarés par aidant** |
 | `/week` | **Semaine** — sept blocs de jour empilés (1, 2 puis 3 par ligne), chacun borné à quatre heures et défilant pour lui-même ; déplacement entre jours, mêmes actions rapides de statut, **copie complète d'une semaine sur celle qui est affichée** (remplacement confirmé, annulés signalés), **exports de la semaine** (CSV par aidant, message par famille) |
 | `/month` | **Mois** — récapitulatif : heures à déclarer par aidant, **solde prévisionnel** (heures restant à planifier et montant prévisionnel, au taux de chaque bénéficiaire), volume autorisé par bénéficiaire, détail des journées, **export CESU en CSV** |
 | `/styleguide` | Écran de contrôle du design system (couleurs, polices, contrastes) |
@@ -212,12 +215,18 @@ manque, colonne « Km »), CSV de la semaine par aidant, et message prêt à col
 chaque famille, **kilomètres déclarés une fois par jour** par l'aidant (aucun montant
 calculé : c'est un relevé), **copie complète d'une semaine sur une autre** depuis la vue
 semaine (remplacement de la semaine cible après confirmation, statuts remis en
-prévisionnel, annulés signalés, périmètre borné au rôle).
+prévisionnel, annulés signalés, périmètre borné au rôle), **tableau de bord hebdomadaire**
+comme index de l'application : les sept jours dans la même grille que la vue semaine (début, fin,
+bénéficiaire et sa couleur), les revenus prévus par aidant puis par bénéficiaire (heures × taux,
+sous-total de l'aidant, total de la semaine, « À saisir » plutôt qu'un total partiel) et les
+kilomètres de la semaine — la vue jour vit désormais sur `/day`.
 
-Les vues lisent les créneaux en base via `/api/appointments`, filtrées selon le rôle.
+Les vues lisent les créneaux en base via `/api/appointments` (jour / semaine / mois) et le
+récapitulatif via `/api/appointments/summary` (`month` ou `week`), filtrés selon le rôle.
 `?fail=1` force l'échec de lecture. Comptes de dev (mot de passe `careplan`) :
 `admin@careplan.local`, `camille@careplan.local` (aidant),
-`famille.dupont@careplan.local` (lecture).
+`famille.dupont@careplan.local` (lecture). Pour reposer un mot de passe :
+`pnpm user:password <email>`.
 
 **À faire** :
 

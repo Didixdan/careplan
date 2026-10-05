@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Une carte est POSÉE, pas suspendue : aucune ombre (vérifié par `pnpm verify:css`).
-// `railed` ajoute le rail de couleur d'aidant à gauche.
+// `railed` ajoute le rail de couleur de la PERSONNE de la ligne, à gauche.
 const props = withDefaults(
   defineProps<{
     muted?: boolean

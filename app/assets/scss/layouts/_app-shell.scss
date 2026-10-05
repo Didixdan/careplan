@@ -14,9 +14,16 @@
       border-b border-line bg-surface px-4 min-h-13 pt-[env(safe-area-inset-top)];
   }
 
-  // Le logotype en Anton : l'un des rares emplois justifiés de la fonte d'affichage.
+  // Le logotype en Anton : l'un des rares emplois justifiés de la fonte d'affichage. C'est aussi
+  // un lien vers le tableau de bord, donc une cible de 44 px — la hauteur de frappe ne baisse
+  // jamais, même pour un mot.
   .app-header__title {
-    @apply font-display truncate text-lg text-ink uppercase tracking-[0.02em];
+    @apply font-display flex min-h-11 items-center text-lg text-ink uppercase
+      tracking-[0.02em] no-underline;
+
+    &:hover {
+      @apply no-underline;
+    }
   }
 
   .app-header__aside {
@@ -74,7 +81,12 @@
   }
 
   .app-sidebar__brand {
-    @apply font-display px-3 pb-4 text-xl text-ink uppercase tracking-[0.02em];
+    @apply font-display flex min-h-11 items-center px-3 pb-4 text-xl text-ink uppercase
+      tracking-[0.02em] no-underline;
+
+    &:hover {
+      @apply no-underline;
+    }
   }
 
   .app-sidebar__item {

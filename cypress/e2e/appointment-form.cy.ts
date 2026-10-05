@@ -24,7 +24,7 @@ describe('Créneau : créer, modifier, supprimer', () => {
         date: DAY, tags: ['Sonde plage libre'], status: 'planned',
         beneficiaryId: beneficiaries[0].id, primaryAssistantId: assistants[0].id,
       }, 2).then(({ start, end }) => {
-        cy.visit('/')
+        cy.visit('/day')
         cy.get('[aria-label="Nouveau créneau"]').click()
         cy.get('[role="dialog"]').should('be.visible')
 

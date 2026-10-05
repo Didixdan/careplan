@@ -31,7 +31,14 @@ export interface Appointment {
   primaryAssistant: string
   /** Identifiant de l'aidant principal, pour la détection de conflit au déplacement. */
   primaryAssistantId: string
-  color: AssistantColor
+  /**
+   * Couleur de l'AIDANT principal : rail gauche de la carte, et remplissage de la barre de
+   * durée sur les cartes de liste. Le nom dit le rôle, pas la palette — deux couleurs vivent
+   * désormais sur le même DTO.
+   */
+  assistantColor: AssistantColor
+  /** Couleur du BÉNÉFICIAIRE : rail droit de la carte. `null` = aucun marquage. */
+  beneficiaryColor: AssistantColor | null
   coAssistants: string[]
   /** Identifiants des co-assistants, pour la détection de conflit au déplacement. */
   coAssistantIds: string[]
@@ -66,6 +73,12 @@ export interface Beneficiary {
   address: string | null
   hourlyRateCents: number | null
   authorizedMinutesMonth: number | null
+  /**
+   * Couleur FACULTATIVE, choisie par l'admin : une teinte de la palette partagée, ou `null`.
+   * Elle ne sert qu'à lire le calendrier plus vite — jamais à porter une information seule,
+   * puisque le nom du bénéficiaire est toujours écrit à côté du rail.
+   */
+  color: AssistantColor | null
 }
 
 /**
@@ -169,7 +182,11 @@ export interface SummaryTotals {
 export interface PersonSummary extends SummaryTotals {
   id: string
   name: string
-  /** Absente pour un co-assistant : le DTO ne porte que la couleur de l'aidant principal. */
+  /**
+   * Couleur de la PERSONNE dont la ligne porte le cumul : celle de l'aidant sur une ligne
+   * d'aidant, celle du bénéficiaire sur une ligne de bénéficiaire. Absente pour un co-assistant :
+   * le DTO ne transporte la couleur que du participant principal, jamais celle d'un co-aidant.
+   */
   color?: AssistantColor
 }
 
@@ -226,4 +243,87 @@ export interface MonthSummary {
   byAssistant: SummaryLine[]
   byBeneficiary: SummaryLine[]
   byDay: DaySummary[]
+}
+
+/**
+ * Cumul d'un couple aidant × bénéficiaire, AVANT le taux : c'est la maille d'un montant, car un
+ * aidant peut travailler chez deux bénéficiaires à deux taux différents. Produit par
+ * `summariseByPair` (`app/utils/summary.ts`).
+ *
+ * Les deux couleurs voyagent avec le cumul, comme dans `PersonSummary` : la ligne parle d'une
+ * personne, elle porte « sa » couleur. Celle d'un co-aidant reste absente — le DTO ne transporte
+ * jamais la couleur d'un co-aidant.
+ */
+export interface PairSummary extends SummaryTotals {
+  assistantId: string
+  assistantName: string
+  assistantColor?: AssistantColor
+  beneficiaryId: string
+  beneficiaryName: string
+  /** Couleur du bénéficiaire : celle du rail de la ligne. Absente = aucun marquage. */
+  beneficiaryColor?: AssistantColor
+}
+
+/**
+ * Ligne de revenu : le cumul d'un couple, plus son taux et ses montants.
+ *
+ * `hourlyRateCents` **absent** veut dire « non communiqué à ce rôle » (un lecteur ne reçoit pas
+ * le coût employeur) ; `null` veut dire « pas encore saisi ». L'écran ne doit donc jamais écrire
+ * « À saisir » à la place d'un montant qu'il n'a pas le droit de montrer.
+ */
+export interface WeekIncomeLine extends PairSummary {
+  /** Heures prévisionnelles du couple : réalisé + à vérifier + prévu, annulés exclus. */
+  minutes: number
+  hourlyRateCents?: number | null
+  /** Montant prévisionnel, en centimes. `null` dès qu'un taux manque. */
+  amountCents: number | null
+  /** Montant réalisé (`completed`), en centimes. `null` dès qu'un taux manque. */
+  declaredAmountCents: number | null
+}
+
+/** Agrégat de revenus : `null` dès qu'un total serait partiel. */
+export interface IncomeTotals {
+  amountCents: number | null
+  declaredAmountCents: number | null
+  /** Lignes dont le taux n'est pas saisi — explique un montant absent, sans le justifier. */
+  missingRateCount: number
+}
+
+/** Les revenus d'UN aidant sur la semaine : ses lignes par bénéficiaire, et son sous-total. */
+export interface IncomeGroup {
+  assistantId: string
+  assistantName: string
+  assistantColor?: AssistantColor
+  lines: WeekIncomeLine[]
+  minutes: number
+  declaredMinutes: number
+  /** Sous-total de l'aidant : `null` dès qu'une de ses lignes manque un taux. */
+  amountCents: number | null
+  declaredAmountCents: number | null
+  missingRateCount: number
+}
+
+/** Kilomètres déclarés par un aidant sur une semaine. */
+export interface MileageSummary {
+  assistantId: string
+  assistantName: string
+  kilometers: number
+}
+
+/**
+ * Réponse de `GET /api/appointments/summary?week=YYYY-MM-DD` : le tableau de bord hebdomadaire.
+ * Le paramètre accepte n'importe quel jour de la semaine ; `week` porte le **lundi résolu**.
+ *
+ * Comme pour le mois, les lignes viennent du serveur : l'écran met en forme, il ne recompte pas.
+ */
+export interface WeekSummary {
+  week: string
+  /** Les sept dates civiles de la semaine, du lundi au dimanche. */
+  dates: string[]
+  totals: SummaryTotals
+  byDay: DaySummary[]
+  byPair: WeekIncomeLine[]
+  income: IncomeTotals
+  /** Vide pour un lecteur : les kilomètres appartiennent aux aidants. */
+  mileage: MileageSummary[]
 }

@@ -38,7 +38,7 @@ describe('Kilomètres du jour', () => {
         created.push(id)
 
         monthlyFor(mine.id).then((before) => {
-          cy.visit('/')
+          cy.visit('/day')
 
           // La ligne n'apparaît que pour les aidants du jour, et le champ est le sien.
           cy.contains('Kilomètres').should('be.visible')
@@ -93,7 +93,7 @@ describe('Kilomètres du jour', () => {
         created.push(id)
 
         cy.request({ method: 'PUT', url: `/api/mileage/${today()}`, body: { assistantId: mine.id, kilometers: 4 } })
-        cy.visit('/')
+        cy.visit('/day')
         cy.get(`#mileage-${mine.id}`).clear().type('{enter}')
 
         cy.request(`/api/mileage?date=${today()}`).its('body').should((entries) => {

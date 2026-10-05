@@ -28,6 +28,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx server/db/seed.ts",
+    "user:password": "tsx scripts/set-password.ts",
     "verify:css": "node scripts/verify-css.mjs",
     "verify": "pnpm typecheck && pnpm typecheck:e2e && pnpm test && pnpm lint && pnpm lint:code-mort && pnpm build && pnpm verify:css",
     "report:comments": "node scripts/comment-report.mjs",

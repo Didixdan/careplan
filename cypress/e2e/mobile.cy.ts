@@ -12,8 +12,9 @@ describe('Mobile (360 × 740)', () => {
     cy.visit('/')
 
     cy.get('.app-bottom-nav').should('be.visible')
-    // Jour, Semaine, Mois, Aidants, Bénéficiaires, Tags — les six entrées de l'admin.
-    cy.get('.app-bottom-nav__item').should('have.length', 6)
+    // Tableau de bord, Jour, Semaine, Mois, Aidants, Bénéficiaires, Tags — les sept entrées de
+    // l'admin, à 360 px : chacune ne fait plus que ~51 px.
+    cy.get('.app-bottom-nav__item').should('have.length', 7)
     // La colonne latérale laisse la place : les deux navigations ne cohabitent pas.
     cy.get('.app-sidebar').should('not.be.visible')
 
@@ -24,11 +25,14 @@ describe('Mobile (360 × 740)', () => {
     cy.location('pathname').should('equal', '/week')
 
     cy.get('.app-bottom-nav').contains('Jour').click()
+    cy.location('pathname').should('equal', '/day')
+
+    cy.get('.app-bottom-nav').contains('Tableau de bord').click()
     cy.location('pathname').should('equal', '/')
   })
 
   it('ne déborde pas horizontalement', () => {
-    for (const path of ['/', '/month', '/week']) {
+    for (const path of ['/', '/day', '/month', '/week']) {
       cy.visit(path)
       cy.document().then((document) => {
         // Une tolérance d'un pixel : les navigateurs arrondissent les largeurs fractionnaires.

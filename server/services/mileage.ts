@@ -1,8 +1,8 @@
 import { and, eq, gte, inArray, lt } from 'drizzle-orm'
 import type { CivilDate, CivilMonth } from '../../app/utils/date'
-import { isCivilDate, isCivilMonth, monthAfter, monthStart } from '../../app/utils/date'
+import { addDays, isCivilDate, isCivilMonth, monthAfter, monthStart, startOfWeek } from '../../app/utils/date'
 import { isPlausibleKilometers, roundKilometers, sumKilometers } from '../../app/utils/mileage'
-import type { MileageEntry } from '../../shared/types/planning'
+import type { MileageEntry, MileageSummary } from '../../shared/types/planning'
 import { assistants, mileage } from '../db/schema'
 import { useDb } from '../utils/db'
 import type { UserFilter } from './appointments'
@@ -114,23 +114,24 @@ export async function setMileage(
 }
 
 /**
- * Cumul du mois, par aidant. Sert au récapitulatif ET à l'export CESU : une seule lecture,
- * donc un seul chiffre — celui que l'aidant a déclaré.
+ * Cumul d'une plage `[start, end[`, par aidant. `user` absent = aucune restriction, comme
+ * `listAppointments` : c'est l'appel interne des récapitulatifs, les routes passent toujours un
+ * rôle.
  *
- * `user` absent = aucune restriction, comme `listAppointments` : c'est l'appel interne du
- * récapitulatif, les routes passent toujours un rôle.
+ * La borne de fin est EXCLUSIVE, comme partout ailleurs : pas de `<= 31` approximatif.
  */
-export async function monthlyMileage(month: string, user?: UserFilter): Promise<Map<string, number>> {
-  assertMonth(month)
-
+async function mileageBetween(
+  start: CivilDate,
+  end: CivilDate,
+  user?: UserFilter,
+): Promise<Map<string, number>> {
   const db = useDb()
   const rows = await db
     .select({ assistantId: mileage.assistantId, kilometers: mileage.kilometers })
     .from(mileage)
     .where(and(
-      gte(mileage.date, monthStart(month)),
-      // Borne de fin EXCLUSIVE, comme partout ailleurs : pas de `<= 31` approximatif.
-      lt(mileage.date, monthAfter(month)),
+      gte(mileage.date, start),
+      lt(mileage.date, end),
       ...(user?.role === 'assistant' && user.assistantId
         ? [inArray(mileage.assistantId, [user.assistantId])]
         : []),
@@ -143,4 +144,49 @@ export async function monthlyMileage(month: string, user?: UserFilter): Promise<
 
   // Somme arrondie : additionner des flottants sans arrondir finit par dériver.
   return new Map([...byAssistant].map(([id, values]) => [id, sumKilometers(values)]))
+}
+
+/**
+ * Cumul du mois, par aidant. Sert au récapitulatif ET à l'export CESU : une seule lecture,
+ * donc un seul chiffre — celui que l'aidant a déclaré.
+ */
+export async function monthlyMileage(month: string, user?: UserFilter): Promise<Map<string, number>> {
+  assertMonth(month)
+  return mileageBetween(monthStart(month), monthAfter(month), user)
+}
+
+/**
+ * Cumul de la SEMAINE, par aidant, avec son nom : le tableau de bord n'a ainsi aucune liste
+ * d'aidants à charger en plus pour afficher ses lignes.
+ *
+ * Un lecteur reçoit une liste vide : les kilomètres appartiennent aux aidants, qui les
+ * déclarent ; une famille n'a ni relevé à déclarer ni frais à consulter.
+ */
+export async function weeklyMileage(week: string, user?: UserFilter): Promise<MileageSummary[]> {
+  if (typeof week !== 'string' || !isCivilDate(week)) {
+    throw createError({ statusCode: 400, statusMessage: 'Date invalide.' })
+  }
+
+  if (user?.role === 'viewer') return []
+
+  const monday = startOfWeek(week)
+  const totals = await mileageBetween(monday, addDays(monday, 7), user)
+  if (totals.size === 0) return []
+
+  // `inArray` avec un tableau vide produirait un SQL invalide : la sortie ci-dessus protège.
+  const db = useDb()
+  const rows = await db
+    .select({ id: assistants.id, firstName: assistants.firstName, lastName: assistants.lastName })
+    .from(assistants)
+    .where(inArray(assistants.id, [...totals.keys()]))
+
+  const nameOf = new Map(rows.map(row => [row.id, `${row.firstName} ${row.lastName}`.trim()]))
+
+  return [...totals]
+    .map(([assistantId, kilometers]) => ({
+      assistantId,
+      assistantName: nameOf.get(assistantId) ?? '',
+      kilometers,
+    }))
+    .sort((a, b) => a.assistantName.localeCompare(b.assistantName, 'fr'))
 }

@@ -30,10 +30,16 @@ export interface BeneficiaryReference {
    * fait écrire « À saisir » dans l'export CESU, donc le jeu de données doit en garder un.
    */
   hourlyRateCents: number | null
+  /**
+   * Teinte du rail droit du calendrier, ou `null` pour « aucun marquage ». Le cas `null` est
+   * volontairement présent : sans lui, la vue qui ne pose pas de rail ne serait exercée nulle
+   * part, et une couleur inventée passerait inaperçue.
+   */
+  color: AssistantColor | null
 }
 
 export const assistantFixtures: AssistantReference[] = [
-  { slug: 'damien', firstName: 'Damien', lastName: 'Martin', color: 'assistant-5', email: 'damien.martin66@outlook.fr', contractedMinutes: 30 * 60 },
+  { slug: 'damien', firstName: 'Damien', lastName: 'Martin', color: 'assistant-5', email: 'damien.martin@careplan.local', contractedMinutes: 30 * 60 },
   { slug: 'camille', firstName: 'Camille', lastName: 'Roussel', color: 'assistant-5', email: 'camille@careplan.local', contractedMinutes: 30 * 60 },
   { slug: 'sofia', firstName: 'Sofia', lastName: 'Lambert', color: 'assistant-3', email: 'sofia@careplan.local', contractedMinutes: 24 * 60 },
   { slug: 'nadia', firstName: 'Nadia', lastName: 'Benali', color: 'assistant-6', email: 'nadia@careplan.local', contractedMinutes: 20 * 60 },
@@ -41,9 +47,10 @@ export const assistantFixtures: AssistantReference[] = [
 ]
 
 export const beneficiaryFixtures: BeneficiaryReference[] = [
-  { slug: 'dupont', firstName: 'Élise', lastName: 'Dupont', hourlyRateCents: 1650 },
-  { slug: 'bernard', firstName: 'Robert', lastName: 'Bernard', hourlyRateCents: 1550 },
-  { slug: 'petit', firstName: 'Lucie', lastName: 'Petit', hourlyRateCents: null },
+  { slug: 'dupont', firstName: 'Élise', lastName: 'Dupont', hourlyRateCents: 1650, color: 'assistant-6' },
+  { slug: 'bernard', firstName: 'Robert', lastName: 'Bernard', hourlyRateCents: 1550, color: 'assistant-2' },
+  // Sans couleur, à dessein : c'est le cas « aucun marquage ».
+  { slug: 'petit', firstName: 'Lucie', lastName: 'Petit', hourlyRateCents: null, color: null },
 ]
 
 /** Modèle d'un créneau : références par slug, tags par NOM, statut en anglais. */

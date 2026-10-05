@@ -59,6 +59,19 @@ describe('buildAppointments', () => {
     }
   })
 
+  it('donne aux bénéficiaires une teinte valide, ou rien du tout', () => {
+    for (const beneficiary of beneficiaryFixtures) {
+      if (beneficiary.color !== null) expect(beneficiary.color).toMatch(/^assistant-[1-8]$/)
+    }
+  })
+
+  it('contient un bénéficiaire coloré ET un bénéficiaire sans couleur', () => {
+    // Les deux chemins doivent être exercés : un jeu entièrement coloré laisserait la règle
+    // « aucune couleur, aucun marquage » n'être vérifiée nulle part.
+    expect(beneficiaryFixtures.some(b => b.color !== null)).toBe(true)
+    expect(beneficiaryFixtures.some(b => b.color === null)).toBe(true)
+  })
+
   it('contient un créneau qui passe minuit', () => {
     // Sans ce cas, une régression sur `durationInMinutes` passerait inaperçue dans les vues.
     const nocturne = appointments.filter(c => (durationInMinutes(c.start, c.end) ?? 0) > 0 && c.start > c.end)

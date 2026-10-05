@@ -35,9 +35,10 @@ par de la prose.
    **opaques et définis par mode** : une opacité se compose avec ce qu'il y a dessous,
    et le contraste devient dépendant du thème par accident.
 
-5. **La couleur signifie, elle ne décore pas.** Le rail porte l'**aidant principal**,
-   le badge porte le **statut** — jamais deux fois la même information par la couleur.
-   La base stocke un identifiant (`assistant-3`), jamais un code hexadécimal.
+5. **La couleur signifie, elle ne décore pas.** Le rail **droit** porte l'**aidant principal**,
+   le rail **gauche** le **bénéficiaire**, le badge porte le **statut** — jamais deux fois la
+   même information par la couleur. La base stocke un identifiant (`assistant-3`), jamais un
+   code hexadécimal.
 
 6. **Toute panne doit être visible dans le code, pas dans la tête de quelqu'un.**
    Avant d'écrire une règle en prose, se demander si un test peut la porter.
